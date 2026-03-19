@@ -1,0 +1,6 @@
+.idea
+chrome_overlay.exe
+*.log
+*.tmp
+*.bak
+*.exe
