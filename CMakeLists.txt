@@ -4,11 +4,11 @@ project(untitled15)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(untitled15
-        main.cpp
-        overlay.cpp
+        src/main.cpp
+        src/overlay.cpp
 )
 
-target_include_directories(untitled15 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(untitled15 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # NOMINMAX must be set globally so windows.h never defines min/max macros,
 # regardless of which .cpp includes it first

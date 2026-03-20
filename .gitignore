@@ -4,3 +4,5 @@ chrome_overlay.exe
 *.tmp
 *.bak
 *.exe
+first.PTR.*
+first.PTR
