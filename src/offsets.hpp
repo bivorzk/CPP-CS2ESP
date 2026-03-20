@@ -23,28 +23,23 @@ namespace Offsets {
     // The main module to grab the base address from
     inline constexpr const char* MODULE = "game.exe";
 
-    // --------------------------------------------------------
-    //  Example: Player health (float)
-    // --------------------------------------------------------
-    namespace Health {
-        inline constexpr uintptr_t          STATIC_PTR = 0x00000000; // base + this
-        inline const     std::vector<uintptr_t> CHAIN  = { 0x00, 0x00, 0x00 };
+    namespace dwEntityList {
+        inline constexpr uintptr_t STATIC_PTR = 0x024B7C68;
+        inline constexpr std::vector<uintptr_t> CHAIN = { };
+    }
+    namespace m_hPlayerPawn {
+    inline constexpr uintptr_t STATIC_PTR = 0x0000090C;
+    inline constexpr std::vector<uintptr_t> CHAIN = { };
     }
 
-    // --------------------------------------------------------
-    //  Example: Player position X (float)
-    // --------------------------------------------------------
-    namespace PosX {
-        inline constexpr uintptr_t          STATIC_PTR = 0x00000000;
-        inline const     std::vector<uintptr_t> CHAIN  = { 0x00, 0x00 };
+    namespace m_iHealth {
+        inline constexpr uintptr_t STATIC_PTR = 0x00000354;
+        inline constexpr std::vector<uintptr_t> CHAIN = { };
     }
 
-    // --------------------------------------------------------
-    //  Example: Ammo (int)
-    // --------------------------------------------------------
-    namespace Ammo {
-        inline constexpr uintptr_t          STATIC_PTR = 0x00000000;
-        inline const     std::vector<uintptr_t> CHAIN  = { 0x00, 0x00 };
+    namespace m_iszPlayerName {
+        inline constexpr uintptr_t STATIC_PTR = 0x000006F8;
+        inline constexpr std::vector<uintptr_t> CHAIN = { };
     }
 
     // Add more namespaces below as you find offsets ...
