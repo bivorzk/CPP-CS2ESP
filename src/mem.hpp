@@ -1,5 +1,4 @@
 #pragma once
-#define NOMINMAX   // prevent windows.h from defining min/max macros
 #include <windows.h>
 #include <tlhelp32.h>
 #include <string>

@@ -1,22 +1,50 @@
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include "overlay.hpp"
-
-// ============================================================
-//  Overlay config — tweak freely
-// ============================================================
-static constexpr int   RECT_W        = 300;   // hollow rect width
-static constexpr int   RECT_H        = 200;   // hollow rect height
-static constexpr int   BORDER_PX     = 3;     // outline thickness
-static constexpr COLORREF RECT_COLOR = RGB(255, 255, 255); // white
-// ============================================================
+#include "gui.hpp"      // for VisualConfig (applied on show)
+#include <vector>
 
 namespace Overlay {
 
-static HWND s_hwnd   = nullptr;
+static HWND s_hwnd    = nullptr;
 static bool s_visible = false;
+static std::vector<RECT> s_pawnRects;
 
-static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg,
-                                 WPARAM wp, LPARAM lp)
-{
+static void drawStyledBox(HDC hdc, RECT r, COLORREF color) {
+    // Hollow corner style (fancier than plain FrameRect)
+    int thickness = 2;
+    int corner = 16;
+
+    HPEN pen = CreatePen(PS_SOLID, thickness, color);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
+    // top-left
+    MoveToEx(hdc, r.left, r.top + corner, nullptr);
+    LineTo(hdc, r.left, r.top);
+    LineTo(hdc, r.left + corner, r.top);
+
+    // top-right
+    MoveToEx(hdc, r.right, r.top + corner, nullptr);
+    LineTo(hdc, r.right, r.top);
+    LineTo(hdc, r.right - corner, r.top);
+
+    // bottom-right
+    MoveToEx(hdc, r.right, r.bottom - corner, nullptr);
+    LineTo(hdc, r.right, r.bottom);
+    LineTo(hdc, r.right - corner, r.bottom);
+
+    // bottom-left
+    MoveToEx(hdc, r.left, r.bottom - corner, nullptr);
+    LineTo(hdc, r.left, r.bottom);
+    LineTo(hdc, r.left + corner, r.bottom);
+
+    SelectObject(hdc, oldPen);
+    SelectObject(hdc, oldBrush);
+    DeleteObject(pen);
+}
+
+static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_PAINT: {
             PAINTSTRUCT ps;
@@ -25,76 +53,86 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg,
             RECT rc;
             GetClientRect(hwnd, &rc);
 
-            // Hollow rectangle — fill only the border region.
-            // Done by drawing 4 filled rects along each edge.
-            HBRUSH brush = CreateSolidBrush(RECT_COLOR);
+            // Clear the whole layer first so we don't keep previous frame trails.
+            HBRUSH clearBrush = CreateSolidBrush(RGB(0,0,0));
+            FillRect(hdc, &rc, clearBrush);
+            DeleteObject(clearBrush);
 
-            // Top bar
-            RECT top    = { 0, 0, rc.right, BORDER_PX };
-            // Bottom bar
-            RECT bottom = { 0, rc.bottom - BORDER_PX, rc.right, rc.bottom };
-            // Left bar
-            RECT left   = { 0, BORDER_PX, BORDER_PX, rc.bottom - BORDER_PX };
-            // Right bar
-            RECT right  = { rc.right - BORDER_PX, BORDER_PX,
-                             rc.right, rc.bottom - BORDER_PX };
+            // -- Hollow rectangle: paint only the 4 border strips.
+            //    The interior is left unpainted (stays black → transparent
+            //    via LWA_COLORKEY).
+            Gui::VisualConfig vis = Gui::getVisuals();
+            HBRUSH br = CreateSolidBrush(vis.color);
+            int b = vis.borderPx;
 
-            FillRect(hdc, &top,    brush);
-            FillRect(hdc, &bottom, brush);
-            FillRect(hdc, &left,   brush);
-            FillRect(hdc, &right,  brush);
+            RECT top    = { 0,            0,            rc.right,     b            };
+            RECT bottom = { 0,            rc.bottom - b, rc.right,    rc.bottom    };
+            RECT left   = { 0,            b,            b,            rc.bottom - b };
+            RECT right  = { rc.right - b, b,            rc.right,     rc.bottom - b };
 
-            DeleteObject(brush);
+            FillRect(hdc, &top,    br);
+            FillRect(hdc, &bottom, br);
+            FillRect(hdc, &left,   br);
+            FillRect(hdc, &right,  br);
+
+            DeleteObject(br);
+
+            // Draw player pawn rectangles (if any)
+            COLORREF boxColor = RGB(40,255,255);
+            for (const RECT& r : s_pawnRects) {
+                drawStyledBox(hdc, r, boxColor);
+            }
+
             EndPaint(hwnd, &ps);
             return 0;
         }
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
+        // No WM_DESTROY → PostQuitMessage here.
+        // Quitting is controlled entirely from the main loop (END hotkey).
     }
-    return DefWindowProc(hwnd, msg, wp, lp);
+    return DefWindowProcA(hwnd, msg, wp, lp);
 }
 
 bool create(HINSTANCE hInst) {
-    const char* CLASS_NAME = "OverlayWindowClass";
-
-    WNDCLASSEX wc{};
+    const char* CLS = "OverlayWindowClass";
+    WNDCLASSEXA wc{};
     wc.cbSize        = sizeof(wc);
     wc.lpfnWndProc   = WndProc;
     wc.hInstance     = hInst;
-    wc.lpszClassName = CLASS_NAME;
-    // Null background brush so the OS doesn't paint over our WM_PAINT
+    wc.lpszClassName = CLS;
     wc.hbrBackground = nullptr;
-    RegisterClassEx(&wc);
+    RegisterClassExA(&wc);
 
-    // Center on screen
-    int screenW = GetSystemMetrics(SM_CXSCREEN);
-    int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int posX    = (screenW - RECT_W) / 2;
-    int posY    = (screenH - RECT_H) / 2;
+    // Center on screen using current VisualConfig
+    Gui::VisualConfig vis = Gui::getVisuals();
+    int sw  = GetSystemMetrics(SM_CXSCREEN);
+    int sh  = GetSystemMetrics(SM_CYSCREEN);
+    int posX = (sw - vis.width)  / 2;
+    int posY = (sh - vis.height) / 2;
 
-    // WS_EX_LAYERED    — required for alpha / transparency
-    // WS_EX_TRANSPARENT — mouse clicks fall through to windows below
-    // WS_EX_TOPMOST    — always above every other window
-    // WS_EX_TOOLWINDOW — hidden from Alt+Tab
-    s_hwnd = CreateWindowEx(
+    s_hwnd = CreateWindowExA(
         WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-        CLASS_NAME, "",
+        CLS, "",
         WS_POPUP,
-        posX, posY, RECT_W, RECT_H,
+        posX, posY, vis.width, vis.height,
         nullptr, nullptr, hInst, nullptr
     );
     if (!s_hwnd) return false;
 
-    // LWA_COLORKEY makes any pixel of color 0x000000 (pure black)
-    // fully transparent — the hollow centre of our rect becomes
-    // see-through without needing a layered alpha per-pixel.
+    // Pure black (0x000000) becomes transparent — the hollow interior
+    // is never painted, so it remains black → see-through.
     SetLayeredWindowAttributes(s_hwnd, RGB(0,0,0), 0, LWA_COLORKEY);
     return true;
 }
 
 void show() {
     if (!s_visible && s_hwnd) {
+        // Re-apply latest visual config (size, position, opacity) on each show
+        Gui::VisualConfig vis = Gui::getVisuals();
+        SetWindowPos(s_hwnd, HWND_TOPMOST,
+                     vis.posX, vis.posY, vis.width, vis.height,
+                     SWP_NOACTIVATE);
+        SetLayeredWindowAttributes(s_hwnd, RGB(0,0,0), (BYTE)vis.opacity,
+                                   LWA_COLORKEY | LWA_ALPHA);
         ShowWindow(s_hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(s_hwnd, nullptr, TRUE);
         s_visible = true;
@@ -109,12 +147,34 @@ void hide() {
 }
 
 void destroy() {
-    if (s_hwnd) {
-        DestroyWindow(s_hwnd);
-        s_hwnd = nullptr;
-    }
+    if (s_hwnd) { DestroyWindow(s_hwnd); s_hwnd = nullptr; }
+}
+
+void repaint() {
+    if (s_hwnd) InvalidateRect(s_hwnd, nullptr, TRUE);
 }
 
 HWND hwnd() { return s_hwnd; }
+
+void setPawnRects(const std::vector<RECT>& rects) {
+    s_pawnRects = rects;
+    if (s_hwnd) InvalidateRect(s_hwnd, nullptr, TRUE);
+}
+
+void setOverlayBounds(int x, int y, int width, int height) {
+    if (!s_hwnd) return;
+    SetWindowPos(s_hwnd, HWND_TOPMOST, x, y, width, height,
+                 SWP_NOACTIVATE | SWP_NOZORDER);
+    InvalidateRect(s_hwnd, nullptr, TRUE);
+}
+
+void setOverlayPosition(int x, int y) {
+    if (!s_hwnd) return;
+    RECT rc;
+    GetWindowRect(s_hwnd, &rc);
+    SetWindowPos(s_hwnd, HWND_TOPMOST, x, y, rc.right-rc.left, rc.bottom-rc.top,
+                 SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+    InvalidateRect(s_hwnd, nullptr, TRUE);
+}
 
 } // namespace Overlay

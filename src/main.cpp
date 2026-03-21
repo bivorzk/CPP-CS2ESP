@@ -1,53 +1,63 @@
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <psapi.h>
 #include <cstdio>
 #include <stdexcept>
+#include <string>
+#include <array>
 
 #include "mem.hpp"
 #include "overlay.hpp"
+#include "gui.hpp"
 #include "offsets.hpp"
+#include "player_scanner.hpp"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "comctl32.lib")
 
 // ============================================================
-//  Config
+//  Globals
 // ============================================================
-static constexpr const char* TARGET_PROCESS = "chrome.exe";
-static constexpr DWORD       POLL_MS        = 500;
-// ============================================================
-
 static mem::ProcessMemory* g_proc = nullptr;
 
 // ============================================================
-//  Poll timer — runs every POLL_MS milliseconds
+//  Poll timer — fires every Config::pollMs milliseconds
 // ============================================================
 VOID CALLBACK pollTimer(HWND, UINT, UINT_PTR, DWORD) {
+    Gui::Config cfg = Gui::getConfig();
 
-    // Check whether the existing handle is still alive
+    // Check if existing handle is still alive
     bool running = false;
     if (g_proc) {
         DWORD exitCode = 0;
         running = GetExitCodeProcess(g_proc->handle(), &exitCode)
                   && exitCode == STILL_ACTIVE;
         if (!running) {
-            printf("[*] Process exited — releasing handle.\n");
+            Gui::log("[*] %s exited — handle released.", cfg.targetProcess);
+            Gui::setStatus("Searching...");
             delete g_proc;
             g_proc = nullptr;
         }
     }
 
-    // Try to attach if we don't have a live handle yet
+    // Try to attach if we don't have a live handle
     if (!running) {
         try {
-            g_proc  = new mem::ProcessMemory(TARGET_PROCESS);
+            g_proc  = new mem::ProcessMemory(cfg.targetProcess);
             running = true;
-            printf("[+] Attached to %s  (PID %lu)\n",
-                   TARGET_PROCESS, g_proc->pid());
-        } catch (const std::exception& e) {
-            // Process not open — silent until next tick
-            (void)e;
+            char status[80];
+            sprintf_s(status, "Attached (PID %lu)", g_proc->pid());
+            Gui::log("[+] Attached to %s (PID %lu)", cfg.targetProcess, g_proc->pid());
+            Gui::setStatus(status);
+        } catch (const std::exception& ex) {
+            Gui::log("[-] Attach failed (%s): %s", cfg.targetProcess, ex.what());
+            Gui::setStatus("Attach failed");
+        } catch (...) {
+            Gui::log("[-] Attach failed (%s): unknown error", cfg.targetProcess);
+            Gui::setStatus("Attach failed");
         }
     }
 
@@ -57,27 +67,30 @@ VOID CALLBACK pollTimer(HWND, UINT, UINT_PTR, DWORD) {
         // ====================================================
         //  YOUR GAME LOGIC HERE
         //  g_proc is a valid live ProcessMemory* at this point.
+
+        bool changed = PlayerScanner::scanPlayers(g_proc);
+        if (changed) {
+            Gui::log("[*] Event: scan result changed");
+        }
         //
         //  -- Module base --
         //  uintptr_t base = g_proc->getModuleBase(Offsets::MODULE);
         //
-        //  -- Read a value via pointer chain --
+        //  -- Read via pointer chain --
         //  uintptr_t addr = g_proc->resolvePointerChain(
         //      base + Offsets::Health::STATIC_PTR,
         //      Offsets::Health::CHAIN
         //  );
         //  auto hp = g_proc->read<float>(addr);
-        //  if (hp) printf("Health: %.1f\n", *hp);
+        //  if (hp) Gui::log("Health: %.1f", *hp);
         //
-        //  -- Write a value --
+        //  -- Write --
         //  g_proc->write<float>(addr, 9999.f);
         //
         //  -- Pattern scan --
         //  uintptr_t hit = g_proc->patternScan(
-        //      base, 0x1000000,
-        //      "89 87 ? ? 00 00 8B 47 10"
-        //  );
-        //  if (hit) printf("Pattern found at: 0x%llX\n", hit);
+        //      base, 0x1000000, "89 87 ? ? 00 00 8B 47 10");
+        //  if (hit) Gui::log("Pattern @ 0x%llX", (unsigned long long)hit);
         // ====================================================
 
     } else {
@@ -90,32 +103,39 @@ VOID CALLBACK pollTimer(HWND, UINT, UINT_PTR, DWORD) {
 // ============================================================
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
-    // Open a console window alongside the overlay
+    // Open console (Debug tab mirrors output here too)
     AllocConsole();
     FILE* dummy;
     freopen_s(&dummy, "CONOUT$", "w", stdout);
     freopen_s(&dummy, "CONOUT$", "w", stderr);
     SetConsoleTitleA("Overlay Console");
-    printf("[*] Overlay started. Watching for %s ...\n", TARGET_PROCESS);
-    printf("[*] Press END to quit.\n\n");
+
+    // Init GUI first — Overlay::create() reads VisualConfig from it
+    if (!Gui::init(hInst)) return 1;
+    Gui::show();
+    Gui::log("[*] Overlay started. Watching for: %s", Gui::getConfig().targetProcess);
+    Gui::log("[*] Press END to quit.");
 
     if (!Overlay::create(hInst)) {
-        printf("[-] Failed to create overlay window.\n");
+        Gui::log("[-] Failed to create overlay window.");
         return 1;
     }
 
-    // Global hotkey — press END to exit cleanly
+    // END key quits cleanly from anywhere
     RegisterHotKey(nullptr, 1, MOD_NOREPEAT, VK_END);
 
-    // Run one tick immediately (no cold-start delay)
+    // First tick immediately — no cold-start delay
     pollTimer(nullptr, 0, 0, 0);
 
-    SetTimer(nullptr, 1, POLL_MS, pollTimer);
+    // Use very aggressive refresh for responsive ESP; configured in GUI but hardcoded for quality
+    const UINT refreshRateMs = 8;
+    SetTimer(nullptr, 1, refreshRateMs, pollTimer);
 
+    // Single message loop handles all windows + timer in this thread
     MSG msg{};
     while (GetMessage(&msg, nullptr, 0, 0)) {
         if (msg.message == WM_HOTKEY && msg.wParam == 1) {
-            printf("[*] END pressed — shutting down.\n");
+            Gui::log("[*] END pressed — shutting down.");
             break;
         }
         TranslateMessage(&msg);
@@ -125,6 +145,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     KillTimer(nullptr, 1);
     UnregisterHotKey(nullptr, 1);
     Overlay::destroy();
+    Gui::destroy();
     delete g_proc;
     return 0;
 }
