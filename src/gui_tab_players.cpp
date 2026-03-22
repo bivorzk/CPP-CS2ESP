@@ -2,6 +2,7 @@
 #include "gui_draw.hpp"
 #include <cstdio>
 #include <algorithm>
+#include <cmath>
 
 // ============================================================
 //  gui_tab_players.cpp
@@ -28,6 +29,9 @@ struct PlayerData {
 
 static PlayerData s_team[2][5];   // s_team[team][slot]
 static HWND       s_playersPanel  = nullptr;
+static HWND       s_bombTimerLabel = nullptr;
+
+static constexpr int ID_BOMB_TIMER = 630;
 
 // ============================================================
 //  Control ID scheme
@@ -48,9 +52,16 @@ void updatePlayer(int team, int slot,
 {
     if (team < 0 || team > 1 || slot < 0 || slot > 4) return;
     auto& p = s_team[team][slot];
-    strncpy_s(p.name, name, 31);
-    p.hp    = hp;
-    p.hpMax = hpMax > 0 ? hpMax : 100;
+
+    // Keep existing name if update is empty (used by overlay team-A suppression path)
+    if (name && name[0] != '\0') {
+        strncpy_s(p.name, name, 31);
+    }
+
+    // Keep existing health values if not valid in current update
+    if (hp > 0) p.hp = hp;
+    if (hpMax > 0) p.hpMax = hpMax;
+
     p.alive = alive;
 
     // Refresh name box
@@ -63,6 +74,20 @@ void updatePlayer(int team, int slot,
     }
 }
 
+void updateBombTimer(float secondsRemaining, bool active) {
+    if (!s_playersPanel || !s_bombTimerLabel) return;
+    char text[64];
+    if (!active || secondsRemaining <= 0.0f) {
+        sprintf_s(text, "Bomb Timer: N/A");
+    } else {
+        int sec = (int)ceil(secondsRemaining);
+        int mins = sec / 60;
+        int secs = sec % 60;
+        sprintf_s(text, "Bomb Timer: %d:%02d  (%.1fs)", mins, secs, secondsRemaining);
+    }
+    SetWindowTextA(s_bombTimerLabel, text);
+}
+
 // ============================================================
 //  Health bar painting
 // ============================================================
@@ -71,6 +96,10 @@ static void paintHealthBar(HDC dc, RECT rc, const PlayerData& p) {
     outlineRC(dc, rc, C_BORDER);
 
     if (!p.alive) {
+        if (p.name[0] == '\0') {
+            // no player mapped to this slot; keep bar empty
+            return;
+        }
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, C_TEXT_SEC);
         HFONT of = (HFONT)SelectObject(dc, s_fMono);
@@ -187,6 +216,14 @@ void buildPlayers(HWND p) {
                 p, (HMENU)(intptr_t)barId(t,i), s_hInst, nullptr);
         }
     }
+
+    // Bomb timer label (shared component in Players tab)
+    int timerY = startY + 5 * rowH + 6;
+    s_bombTimerLabel = CreateWindowA("STATIC", "Bomb Timer: N/A",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        col1X, timerY, panelW - 20, 20,
+        p, (HMENU)(intptr_t)ID_BOMB_TIMER, s_hInst, nullptr);
+    SendMessage(s_bombTimerLabel, WM_SETFONT, (WPARAM)s_fMono, TRUE);
 }
 
 bool handlePlayers(WPARAM) { return false; }
@@ -207,6 +244,9 @@ void clearPlayers() {
             HWND be = GetDlgItem(s_playersPanel, barId(t, s));
             if (be) InvalidateRect(be, nullptr, FALSE);
         }
+    }
+    if (s_bombTimerLabel) {
+        SetWindowTextA(s_bombTimerLabel, "Bomb Timer: N/A");
     }
 }
 

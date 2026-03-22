@@ -2,45 +2,56 @@
 #define WIN32_LEAN_AND_MEAN
 #include "overlay.hpp"
 #include "gui.hpp"      // for VisualConfig (applied on show)
+#include <cstdio>
 #include <vector>
+#include <algorithm>
 
 namespace Overlay {
 
 static HWND s_hwnd    = nullptr;
 static bool s_visible = false;
-static std::vector<RECT> s_pawnRects;
+static std::vector<Overlay::PawnRenderInfo> s_pawnRects;
 
 static void drawStyledBox(HDC hdc, RECT r, COLORREF color) {
-    // Hollow corner style (fancier than plain FrameRect)
-    int thickness = 2;
-    int corner = 16;
+    // Larger corner style with moderately thicker outline for better visibility
+    int thickness = 3;
+    int width = (int)std::max<long>(0, (long)(r.right - r.left));
+    int height = (int)std::max<long>(0, (long)(r.bottom - r.top));
+    int len = std::min(16, std::min(width / 4, height / 4));
 
     HPEN pen = CreatePen(PS_SOLID, thickness, color);
     HGDIOBJ oldPen = SelectObject(hdc, pen);
-    HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
 
-    // top-left
-    MoveToEx(hdc, r.left, r.top + corner, nullptr);
+    // Top-left
+    MoveToEx(hdc, r.left, r.top + len, nullptr);
     LineTo(hdc, r.left, r.top);
-    LineTo(hdc, r.left + corner, r.top);
+    LineTo(hdc, r.left + len, r.top);
 
-    // top-right
-    MoveToEx(hdc, r.right, r.top + corner, nullptr);
+    // Top-right
+    MoveToEx(hdc, r.right, r.top + len, nullptr);
     LineTo(hdc, r.right, r.top);
-    LineTo(hdc, r.right - corner, r.top);
+    LineTo(hdc, r.right - len, r.top);
 
-    // bottom-right
-    MoveToEx(hdc, r.right, r.bottom - corner, nullptr);
+    // Bottom-right
+    MoveToEx(hdc, r.right, r.bottom - len, nullptr);
     LineTo(hdc, r.right, r.bottom);
-    LineTo(hdc, r.right - corner, r.bottom);
+    LineTo(hdc, r.right - len, r.bottom);
 
-    // bottom-left
-    MoveToEx(hdc, r.left, r.bottom - corner, nullptr);
+    // Bottom-left
+    MoveToEx(hdc, r.left, r.bottom - len, nullptr);
     LineTo(hdc, r.left, r.bottom);
-    LineTo(hdc, r.left + corner, r.bottom);
+    LineTo(hdc, r.left + len, r.bottom);
+
+    // Optional center cross for quick aim overscan
+    int cx = (r.left + r.right) / 2;
+    int cy = (r.top + r.bottom) / 2;
+    int cs = std::min(4, len);
+    MoveToEx(hdc, cx - cs, cy, nullptr);
+    LineTo(hdc, cx + cs, cy);
+    MoveToEx(hdc, cx, cy - cs, nullptr);
+    LineTo(hdc, cx, cy + cs);
 
     SelectObject(hdc, oldPen);
-    SelectObject(hdc, oldBrush);
     DeleteObject(pen);
 }
 
@@ -58,29 +69,63 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             FillRect(hdc, &rc, clearBrush);
             DeleteObject(clearBrush);
 
-            // -- Hollow rectangle: paint only the 4 border strips.
-            //    The interior is left unpainted (stays black → transparent
-            //    via LWA_COLORKEY).
-            Gui::VisualConfig vis = Gui::getVisuals();
-            HBRUSH br = CreateSolidBrush(vis.color);
-            int b = vis.borderPx;
+            // Draw player pawn rectangles (and bomb markers) (if any)
+            for (const Overlay::PawnRenderInfo& p : s_pawnRects) {
+                // Only draw players if drawBox enabled, bomb always draws marker
+                if (!p.drawBox && !p.isBomb) continue;
 
-            RECT top    = { 0,            0,            rc.right,     b            };
-            RECT bottom = { 0,            rc.bottom - b, rc.right,    rc.bottom    };
-            RECT left   = { 0,            b,            b,            rc.bottom - b };
-            RECT right  = { rc.right - b, b,            rc.right,     rc.bottom - b };
+                COLORREF boxColor;
+                if (p.isBomb) {
+                    boxColor = RGB(255, 120, 0);
+                } else {
+                    boxColor = p.teamA ? RGB(100,255,100) : RGB(40,255,255);
+                }
+                if (p.drawBox) drawStyledBox(hdc, p.rect, boxColor);
 
-            FillRect(hdc, &top,    br);
-            FillRect(hdc, &bottom, br);
-            FillRect(hdc, &left,   br);
-            FillRect(hdc, &right,  br);
+                // draw name/label above the box
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, RGB(255,255,255));
+                HFONT of = (HFONT)SelectObject(hdc, GetStockObject(DEFAULT_GUI_FONT));
+                int textX = p.rect.left;
+                int textY = p.rect.top - 16;
 
-            DeleteObject(br);
+                char label[64];
+                if (p.isBomb) {
+                    float remaining = p.blowTime;
+                    if (remaining < 0.0f) remaining = 0.0f;
+                    sprintf_s(label, "BOMB %.1f", remaining);
+                } else {
+                    strncpy_s(label, p.name, _TRUNCATE);
+                }
+                TextOutA(hdc, textX, textY, label, (int)strlen(label));
+                SelectObject(hdc, of);
 
-            // Draw player pawn rectangles (if any)
-            COLORREF boxColor = RGB(40,255,255);
-            for (const RECT& r : s_pawnRects) {
-                drawStyledBox(hdc, r, boxColor);
+                // draw vertical health bar on the right side
+                int barW = 6;
+                int barPadding = 4;
+                int barTop = p.rect.top + 1;
+                int barBottom = p.rect.bottom - 1;
+                int barLeft = p.rect.right + barPadding;
+                int barRight = barLeft + barW;
+
+                float frac = std::clamp(p.health / 100.0f, 0.0f, 1.0f);
+                int fullH = barBottom - barTop;
+                int filledH = (int)(fullH * frac);
+                int fillTop = barBottom - filledH;
+
+                // base outline
+                RECT baseBar = { barLeft, barTop, barRight, barBottom };
+                FrameRect(hdc, &baseBar, CreateSolidBrush(RGB(50,50,50)));
+
+                // health fill color
+                COLORREF hColor = RGB(
+                    (BYTE)(255 * (1.0f - frac)),
+                    (BYTE)(255 * frac),
+                    0);
+                RECT fillBar = { barLeft+1, fillTop, barRight-1, barBottom-1 };
+                HBRUSH hBrush = CreateSolidBrush(hColor);
+                FillRect(hdc, &fillBar, hBrush);
+                DeleteObject(hBrush);
             }
 
             EndPaint(hwnd, &ps);
@@ -156,9 +201,13 @@ void repaint() {
 
 HWND hwnd() { return s_hwnd; }
 
-void setPawnRects(const std::vector<RECT>& rects) {
-    s_pawnRects = rects;
-    if (s_hwnd) InvalidateRect(s_hwnd, nullptr, TRUE);
+void setPawnRects(const std::vector<PawnRenderInfo>& pawns) {
+    s_pawnRects = pawns;
+    if (s_hwnd) {
+        // Invalidate async and let the message queue handle paint. This is more
+        // efficient than blocking UpdateWindow() every frame.
+        InvalidateRect(s_hwnd, nullptr, TRUE);
+    }
 }
 
 void setOverlayBounds(int x, int y, int width, int height) {

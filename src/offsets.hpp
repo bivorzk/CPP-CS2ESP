@@ -92,6 +92,71 @@ namespace Offsets {
         inline constexpr uintptr_t STATIC_PTR = 0xD58;   // camera-relative offset (example)
     }
 
+    namespace m_angEyeAngles {
+        inline constexpr uintptr_t STATIC_PTR = 0x3DD0; // C_CSPlayerPawn m_angEyeAngles (dec 15824)
+    }
+
+    namespace m_bSpotted {
+        inline constexpr uintptr_t STATIC_PTR = 0x3E5; // best-effort CS2 spotted flag; may require tuning
+    }
+
+    namespace m_bDormant {
+        inline constexpr uintptr_t STATIC_PTR = 0x00A0; // typical C_BaseEntity m_bDormant (verify for CS2)
+    }
+
+    namespace m_bSpottedByMask {
+        inline constexpr uintptr_t STATIC_PTR = 0x3F0; // best-effort CS2 spotted mask; may require tuning
+    }
+
+    namespace m_flSimulationTime {
+        inline constexpr uintptr_t STATIC_PTR = 0x3C0;   // fallback: example (from local player class maybe C_BaseEntity?)
+    }
+
+    namespace m_aimPunchAngle {
+        inline constexpr uintptr_t STATIC_PTR = 0x1490; // C_CSPlayerPawn m_aimPunchAngle (approx + active weapon recoil)
+    }
+
+    namespace m_pWeaponServices {
+        inline constexpr uintptr_t STATIC_PTR = 0x11C0; // local pawn weapon services container
+    }
+
+    namespace m_hActiveWeapon {
+        inline constexpr uintptr_t STATIC_PTR = 0x1388; // C_CSPlayerPawn->m_hActiveWeapon handle
+    }
+
+    namespace m_iShotsFired {
+        inline constexpr uintptr_t STATIC_PTR = 0x147C; // C_CSWeaponBase shots fired in current spray
+    }
+
+    namespace m_iItemDefinitionIndex {
+        inline constexpr uintptr_t STATIC_PTR = 0x1480; // C_CSWeaponBase item definition ID
+    }
+
+    namespace C_BaseEntity {
+        inline constexpr uintptr_t m_pGameSceneNode = 0x338; // base pointer to CGameSceneNode (from client_dll.json, was 0x334)
+    }
+
+    namespace CGameSceneNode {
+        inline constexpr uintptr_t m_vecAbsOrigin = 0xD0;  // absolute world origin
+        inline constexpr uintptr_t m_vecOrigin    = 0x88;  // net quantized origin, may require conversion
+    }
+
+    namespace C_PlantedC4 {
+        inline constexpr uintptr_t m_bBombTicking = 0x1170;
+        inline constexpr uintptr_t m_nBombSite = 0x1174;
+        inline constexpr uintptr_t m_bC4Activated = 0x11B8; // updated per dump
+        inline constexpr uintptr_t m_bBeingDefused = 0x11AC;
+        inline constexpr uintptr_t m_bBombDefused = 0x11C4;
+        inline constexpr uintptr_t m_flC4Blow = 0x11A0;
+        inline constexpr uintptr_t m_hBombDefuser = 0x11D0; // m_hBombDefuser from client json 4552
+        inline constexpr uintptr_t m_vecC4ExplodeSpectatePos = 0x5824; // world position for bomb overlay (from client_dll.json)
+    }
+
+    namespace dwPlantedC4 {
+        inline constexpr uintptr_t STATIC_PTR = 0x2317740;  // planted C4 list pointer
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+
     // Add more namespaces below as you find offsets ...
 
 } // namespace Offsets

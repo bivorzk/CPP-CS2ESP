@@ -43,6 +43,26 @@ void buildVisuals(HWND p) {
     SendMessage(cb, BM_SETCHECK, s_visuals.showTeamABoxes ? BST_CHECKED : BST_UNCHECKED, 0);
     y += 28;
 
+    HWND cb2 = CreateWindowA("BUTTON", "Auto-aim & shoot (no key)",
+        WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+        x, y, 260, 20,
+        p, (HMENU)(intptr_t)ID_VIS_AUTO_AIM, s_hInst, nullptr);
+    SendMessage(cb2, BM_SETCHECK, s_visuals.autoAim ? BST_CHECKED : BST_UNCHECKED, 0);
+    y += 26;
+
+    HWND cb3 = CreateWindowA("BUTTON", "Strict visibility (distance + cone)",
+        WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+        x, y, 260, 20,
+        p, (HMENU)(intptr_t)ID_VIS_STRICT_VIS, s_hInst, nullptr);
+    SendMessage(cb3, BM_SETCHECK, s_visuals.strictVisibility ? BST_CHECKED : BST_UNCHECKED, 0);
+    y += 26;
+
+    mkLabel(p, "Target hold frames", x, y, 120, 16);
+    char buf2[16];
+    sprintf_s(buf2, "%d", s_visuals.visCooldownFrames);
+    mkEdit(p, buf2, x+130, y-2, 48, 22, ID_VIS_COOLDOWN);
+    y += 30;
+
     mkButton(p, "Apply",            x,     y, 90, 26, ID_VIS_APPLY);
     mkButton(p, "Center on Screen", x+98,  y,130, 26, ID_VIS_CENTER);
 }
@@ -61,6 +81,10 @@ bool handleVisuals(WPARAM wp) {
             int b = (int)SendMessage(GetDlgItem(p,ID_VIS_B), TBM_GETPOS, 0,0);
             s_visuals.color = RGB(r,g,b);
             s_visuals.showTeamABoxes = (SendMessage(GetDlgItem(p, ID_VIS_SHOW_TEAM_A), BM_GETCHECK, 0, 0) == BST_CHECKED);
+            s_visuals.autoAim        = (SendMessage(GetDlgItem(p, ID_VIS_AUTO_AIM), BM_GETCHECK, 0, 0) == BST_CHECKED);
+            s_visuals.strictVisibility = (SendMessage(GetDlgItem(p, ID_VIS_STRICT_VIS), BM_GETCHECK, 0, 0) == BST_CHECKED);
+            GetWindowTextA(GetDlgItem(p, ID_VIS_COOLDOWN), buf, 16); s_visuals.visCooldownFrames = atoi(buf);
+            if (s_visuals.visCooldownFrames < 0) s_visuals.visCooldownFrames = 0;
             return true;
         }
         case ID_VIS_CENTER:

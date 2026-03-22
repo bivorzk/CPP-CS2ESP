@@ -14,6 +14,16 @@
 // ============================================================
 
 namespace Overlay {
+    struct PawnRenderInfo {
+        RECT rect;
+        char name[64];
+        int health;
+        bool drawBox;
+        bool teamA;
+        bool isBomb;
+        float blowTime;
+    };
+
     bool create(HINSTANCE hInst);
     void show();
     void hide();
@@ -22,7 +32,7 @@ namespace Overlay {
     HWND hwnd();
 
     // World-space markers to draw (e.g., players).
-    void setPawnRects(const std::vector<RECT>& rects);
+    void setPawnRects(const std::vector<PawnRenderInfo>& pawns);
 
     // Move/resize the overlay window to match target screen bounds.
     void setOverlayBounds(int x, int y, int width, int height);

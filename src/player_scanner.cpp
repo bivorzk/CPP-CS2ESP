@@ -2,6 +2,7 @@
 #include "gui.hpp"
 #include "gui_tabs.hpp"
 #include "overlay.hpp"
+#include "bomb_found.hpp"
 
 #include <array>
 #include <algorithm>
@@ -55,6 +56,11 @@ static bool getCS2WindowRect(RECT& out) {
 }
 
 namespace PlayerScanner {
+
+static uint64_t s_scanFrameCount = 0;
+static uint64_t s_scanLastFpsMs = 0;
+static uint64_t s_scanTotalMs = 0;
+static bool     s_scanDebug = true; // toggle for console profiling
 
 std::string readRemoteString(mem::ProcessMemory* proc,
                              uintptr_t address,
@@ -144,17 +150,40 @@ bool scanPlayers(mem::ProcessMemory* proc) {
     std::array<float,16> viewMatrix{};
     if (haveMatrix) {
         viewMatrix = *vmOpt;
-        Gui::log("[DBG] view matrix from %s (base=0x%llX)", vmModule ? vmModule : "unknown", (unsigned long long)vmBase);
-        Gui::log("[DBG] viewMatrix[0..3]=%.6f %.6f %.6f %.6f", viewMatrix[0], viewMatrix[1], viewMatrix[2], viewMatrix[3]);
-        Gui::log("[DBG] viewMatrix[12..15]=%.6f %.6f %.6f %.6f", viewMatrix[12], viewMatrix[13], viewMatrix[14], viewMatrix[15]);
-    } else {
-        Gui::log("[DBG] viewMatrix read failed, module=%s base=0x%llX offset=0x%llX", vmModule ? vmModule : "unknown", (unsigned long long)vmBase, (unsigned long long)Offsets::dwViewMatrix::STATIC_PTR);
     }
 
+    static std::optional<std::array<float,16>> prevViewMatrix;
+    static std::vector<Overlay::PawnRenderInfo> prevPawnRects;
+
     std::vector<PlayerRecord> currentPlayers;
-    std::vector<RECT> pawnRects;
+    std::vector<Overlay::PawnRenderInfo> pawnRects;
     Gui::VisualConfig visuals = Gui::getVisuals();
     bool showTeamABoxes = visuals.showTeamABoxes;
+
+    RECT gameRect;
+    if (!getCS2WindowRect(gameRect)) {
+        Gui::log("[DBG] CS2 window not found, skipping scan");
+        return false;
+    }
+    int gameW = gameRect.right - gameRect.left;
+    int gameH = gameRect.bottom - gameRect.top;
+
+    // Bomb direction filtering: only show friendly boxes when local reticle is roughly near bomb.
+    bool localLookingAtBomb = false;
+    Bomb::Info bombInfoNow = Bomb::Finder::read(proc);
+    if (haveMatrix && bombInfoNow.valid && bombInfoNow.active) {
+        Vec3 bombWorld{bombInfoNow.origin.x, bombInfoNow.origin.y, bombInfoNow.origin.z};
+        POINT bombPt;
+        if (worldToScreen(bombWorld, viewMatrix, gameW, gameH, bombPt)) {
+            int centerX = gameW / 2;
+            int centerY = gameH / 2;
+            int dx = abs(bombPt.x - centerX);
+            int dy = abs(bombPt.y - centerY);
+            int threshold = (std::min)(gameW, gameH) / 4;
+            localLookingAtBomb = (dx <= threshold && dy <= threshold);
+            Gui::log("[DBG] bomb screen delta dx=%d dy=%d threshold=%d localLookingAtBomb=%d", dx, dy, threshold, (int)localLookingAtBomb);
+        }
+    }
 
     for (int i = 1; i < 64; ++i) {
         auto currentControllerOpt = proc->read<uintptr_t>(listEntry + Offsets::EntityList::CHUNK_STRIDE * i);
@@ -199,7 +228,11 @@ bool scanPlayers(mem::ProcessMemory* proc) {
             drawBox = false;
         } else if (localTeam >= 0 && gameTeam == localTeam) {
             uiTeam = 0;    // local team mates on Team A list
-            drawBox = showTeamABoxes;
+            // Do not show team boxes for local team by default; world marker only if user wants.
+            drawBox = false;
+        } else {
+            // enemies are shown (if user still wants Team A drawing) as a separate feature.
+            drawBox = true;
         }
 
         auto healthOpt = proc->read<uint32_t>(pawn + Offsets::m_iHealth::STATIC_PTR);
@@ -227,45 +260,44 @@ bool scanPlayers(mem::ProcessMemory* proc) {
             if (!originOpt) {
                 originOpt = proc->read<Vec3>(pawn + Offsets::m_vecOrigin::ABS_ORIGIN); // fallback
             }
-            auto viewOffsetOpt = proc->read<Vec3>(pawn + Offsets::m_vecViewOffset::STATIC_PTR);
 
             if (originOpt) {
+                auto viewOffsetOpt = proc->read<Vec3>(pawn + Offsets::m_vecViewOffset::STATIC_PTR);
+
                 Vec3 origin = *originOpt;
 
                 // filter out bogus origin (0,0,0) which often maps to screen center
                 if (fabs(origin.x) < 1.0f && fabs(origin.y) < 1.0f && fabs(origin.z) < 1.0f) {
-                    Gui::log("[DBG] skipping pawn %llX near-zero origin", (unsigned long long)pawn);
-                    continue;
-                }
+                    // don't add stale center-case entity
+                } else {
+                    Vec3 head = origin;
+                    if (viewOffsetOpt) {
+                        head.x += viewOffsetOpt->x;
+                        head.y += viewOffsetOpt->y;
+                        head.z += viewOffsetOpt->z;
+                    }
 
-                Vec3 head = origin;
-                if (viewOffsetOpt) {
-                    head.x += viewOffsetOpt->x;
-                    head.y += viewOffsetOpt->y;
-                    head.z += viewOffsetOpt->z;
-                }
-
-                RECT gameRect;
-                if (getCS2WindowRect(gameRect)) {
-                    int gameW = gameRect.right - gameRect.left;
-                    int gameH = gameRect.bottom - gameRect.top;
                     POINT footPt, headPt;
-                    bool footOk = worldToScreen(*originOpt, viewMatrix, gameW, gameH, footPt);
+                    bool footOk = worldToScreen(origin, viewMatrix, gameW, gameH, footPt);
                     bool headOk = worldToScreen(head, viewMatrix, gameW, gameH, headPt);
 
-                    Gui::log("[DBG] pawn=%llX origin=%.2f,%.2f,%.2f head=%.2f,%.2f,%.2f", (unsigned long long)pawn,
-                             originOpt->x, originOpt->y, originOpt->z,
-                             head.x, head.y, head.z);
-
                     if (footOk && headOk) {
-                        if (drawBox) {
-                            int left = std::min(footPt.x, headPt.x) - 12;
-                            int right = std::max(footPt.x, headPt.x) + 12;
-                            int top = std::min(footPt.y, headPt.y) - 24;
-                            int bottom = std::max(footPt.y, headPt.y) + 12;
-                            RECT targetRect = {left, top, right, bottom};
-                            pawnRects.push_back(targetRect);
-                        }
+                        int left = std::min(footPt.x, headPt.x) - 12;
+                        int right = std::max(footPt.x, headPt.x) + 12;
+                        int fullHeight = std::max(footPt.y, headPt.y) - std::min(footPt.y, headPt.y);
+                        int shrinkAmount = (int)(fullHeight * 0.3f); // shave 30% from total height
+                        int top = std::min(footPt.y, headPt.y) - 24 + shrinkAmount/2;
+                        int bottom = std::max(footPt.y, headPt.y) + 12 - shrinkAmount/2;
+                        RECT targetRect = {left, top, right, bottom};
+
+                        Overlay::PawnRenderInfo info;
+                        info.rect = targetRect;
+                        strncpy_s(info.name, name.c_str(), _TRUNCATE);
+                        info.health = health;
+                        info.drawBox = drawBox;
+                        info.teamA = (uiTeam == 0);
+                        info.isBomb = false;
+                        pawnRects.push_back(info);
                     } else {
                         Gui::log("[DBG] w2s failed for pawn (footOk=%d headOk=%d)", footOk, headOk);
                     }
@@ -275,26 +307,100 @@ bool scanPlayers(mem::ProcessMemory* proc) {
             }
         }
 
-        currentPlayers.push_back({i, uiTeam, std::move(name), health});
+        currentPlayers.push_back(PlayerRecord{i, uiTeam, std::move(name), health});
     }
 
     bool listChanged = (currentPlayers != cachedPlayers);
     cachedPlayers = currentPlayers;
 
-    Gui::clearPlayers();
+    // Add bomb marker to overlay if bomb is planted / actively ticking (not dropped, not a half-read coin).
+    static std::optional<Vec3> g_lastBombWorld;
+    Bomb::Info bombInfo = Bomb::Finder::read(proc);
+
+    if (!bombInfo.active) {
+        g_lastBombWorld.reset();
+    }
+
+    if (!bombInfo.active || !bombInfo.valid || !haveMatrix) {
+        // no active planted bomb to show
+    } else {
+        POINT bombPt;
+        Vec3 bombWorld { bombInfo.origin.x, bombInfo.origin.y, bombInfo.origin.z };
+
+        auto isBogusBombOrigin = [&](const Vec3 &v) {
+            return fabs(v.x) < 1.0f && fabs(v.y) < 1.0f && fabs(v.z) < 1.0f;
+        };
+
+        bool canDrawBomb = true;
+        if (isBogusBombOrigin(bombWorld)) {
+            if (g_lastBombWorld.has_value()) {
+                bombWorld = *g_lastBombWorld;
+                Gui::log("[Bomb] active planted bomb origin bogus; using last known position %.2f,%.2f,%.2f", bombWorld.x, bombWorld.y, bombWorld.z);
+            } else {
+                Gui::log("[Bomb] active planted bomb has bogus origin and no last known position yet; skipping display");
+                canDrawBomb = false;
+            }
+        }
+
+        bool bombOk = false;
+        if (canDrawBomb) bombOk = worldToScreen(bombWorld, viewMatrix, gameW, gameH, bombPt);
+        if (!bombOk) {
+            static const float boostZ[] = { 8.0f, 16.0f, 32.0f, 64.0f };
+            for (float dz : boostZ) {
+                Vec3 tmp = bombWorld;
+                tmp.z += dz;
+                if (worldToScreen(tmp, viewMatrix, gameW, gameH, bombPt)) {
+                    bombOk = true;
+                    bombWorld = tmp;
+                    Gui::log("[Bomb] w2s fallback z+%.1f succeeded at %d,%d", dz, bombPt.x, bombPt.y);
+                    break;
+                }
+            }
+        }
+
+        if (!bombOk && g_lastBombWorld.has_value()) {
+            Vec3 tmp = *g_lastBombWorld;
+            if (worldToScreen(tmp, viewMatrix, gameW, gameH, bombPt)) {
+                bombOk = true;
+                bombWorld = tmp;
+                Gui::log("[Bomb] w2s lastBombWorld fallback succeeded at %d,%d", bombPt.x, bombPt.y);
+            }
+        }
+
+        if (bombOk) {
+            g_lastBombWorld = bombWorld;
+            Overlay::PawnRenderInfo bombRect{};
+            bombRect.rect.left = bombPt.x - 16;
+            bombRect.rect.right = bombPt.x + 16;
+            // shift center down to better match bomb on ground
+            bombRect.rect.top = bombPt.y - 24 + 8;
+            bombRect.rect.bottom = bombPt.y + 24 + 8;
+            strncpy_s(bombRect.name, "BOMB", _TRUNCATE);
+            bombRect.health = 0;
+            bombRect.drawBox = true;
+            bombRect.teamA = false;
+            bombRect.isBomb = true;
+            bombRect.blowTime = bombInfo.blowTime;
+            pawnRects.push_back(bombRect);
+
+            Gui::log("[Bomb] worldToScreen succeeded at %d,%d", bombPt.x, bombPt.y);
+        } else {
+            Gui::log("[Bomb] worldToScreen failed for bomb origin (raw: %.2f,%.2f,%.2f)",
+                    bombInfo.origin.x, bombInfo.origin.y, bombInfo.origin.z);
+        }
+    }
+
+    // Real-time mode: update overlays every tick, no gating.
+    // This can be expensive but gives immediate player/bomb tracking during camera/player motion.
+    prevPawnRects = pawnRects;
     Overlay::setPawnRects(pawnRects);
 
+    Gui::clearPlayers();
+
     if (currentPlayers.empty()) {
-        Gui::log("[-] scanPlayers: no valid players found (verify offsets and entity structure)");
         return true;
     }
 
-    Gui::log("[Scan] entityList: 0x%llX firstEntry: 0x%llX count=%zu",
-              (unsigned long long)entityList,
-              (unsigned long long)listEntry,
-              currentPlayers.size());
-
-    RECT gameRect;
     if (getCS2WindowRect(gameRect)) {
         int gameW = gameRect.right - gameRect.left;
         int gameH = gameRect.bottom - gameRect.top;
@@ -302,8 +408,6 @@ bool scanPlayers(mem::ProcessMemory* proc) {
     }
 
     for (auto& player : currentPlayers) {
-        Gui::log("[Player] idx=%d team=%d name=%s hp=%u", player.index, player.team, player.name.c_str(), player.health);
-
         int slot = (player.index - 1) % 5;
         int team = player.team;
         if (team < 0 || team > 1) team = 1;

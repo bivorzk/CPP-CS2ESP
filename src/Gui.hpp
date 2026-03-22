@@ -1,4 +1,7 @@
 #pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 
 // ============================================================
@@ -33,6 +36,10 @@ namespace Gui {
         COLORREF color;
         int      posX, posY;
         bool     showTeamABoxes; // draw friendly team boxes in overlay (Team A)
+        bool     autoAim;        // enable auto aim+shoot without key hold
+
+        bool     strictVisibility;  // enforce strict locally-visible criteria
+        int      visCooldownFrames; // number of frames to confirm new target / keep old after lost
     };
 
     // -- Lifecycle -------------------------------------------
@@ -44,6 +51,7 @@ namespace Gui {
     // -- Runtime API -----------------------------------------
     void  log(const char* fmt, ...);        // Debug tab + console
     void  setStatus(const char* text);      // Config tab status bar
+    void  updateBombTimer(float secondsRemaining, bool active); // Players tab
 
     // -- Config reads ----------------------------------------
     Config       getConfig();

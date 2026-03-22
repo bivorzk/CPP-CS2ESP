@@ -6,12 +6,16 @@
 #include <stdexcept>
 #include <string>
 #include <array>
+#include <thread>
+#include <atomic>
 
 #include "mem.hpp"
 #include "overlay.hpp"
 #include "gui.hpp"
 #include "offsets.hpp"
 #include "player_scanner.hpp"
+#include "bomb_found.hpp"
+#include "aim.hpp"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -22,11 +26,13 @@
 //  Globals
 // ============================================================
 static mem::ProcessMemory* g_proc = nullptr;
+static std::atomic<bool> g_polling = false;
+static std::thread g_pollThread;
 
 // ============================================================
-//  Poll timer — fires every Config::pollMs milliseconds
+//  Run one scan+aim cycle (reusable for timer and fast thread)
 // ============================================================
-VOID CALLBACK pollTimer(HWND, UINT, UINT_PTR, DWORD) {
+static void runTick() {
     Gui::Config cfg = Gui::getConfig();
 
     // Check if existing handle is still alive
@@ -61,41 +67,42 @@ VOID CALLBACK pollTimer(HWND, UINT, UINT_PTR, DWORD) {
         }
     }
 
+    static float lastBombRemain = 0.0f;
+    static uint64_t lastBombSeenMs = 0;
+
     if (running) {
         Overlay::show();
 
-        // ====================================================
-        //  YOUR GAME LOGIC HERE
-        //  g_proc is a valid live ProcessMemory* at this point.
-
         bool changed = PlayerScanner::scanPlayers(g_proc);
         if (changed) {
-            Gui::log("[*] Event: scan result changed");
+            // silent (no frequent log) for speed
         }
-        //
-        //  -- Module base --
-        //  uintptr_t base = g_proc->getModuleBase(Offsets::MODULE);
-        //
-        //  -- Read via pointer chain --
-        //  uintptr_t addr = g_proc->resolvePointerChain(
-        //      base + Offsets::Health::STATIC_PTR,
-        //      Offsets::Health::CHAIN
-        //  );
-        //  auto hp = g_proc->read<float>(addr);
-        //  if (hp) Gui::log("Health: %.1f", *hp);
-        //
-        //  -- Write --
-        //  g_proc->write<float>(addr, 9999.f);
-        //
-        //  -- Pattern scan --
-        //  uintptr_t hit = g_proc->patternScan(
-        //      base, 0x1000000, "89 87 ? ? 00 00 8B 47 10");
-        //  if (hit) Gui::log("Pattern @ 0x%llX", (unsigned long long)hit);
-        // ====================================================
 
+        Bomb::Info bombInfo = Bomb::Finder::read(g_proc);
+        uint64_t nowMs = GetTickCount64();
+
+        if (bombInfo.valid && bombInfo.blowTime > 0.0f) {
+            lastBombRemain = bombInfo.blowTime;
+            lastBombSeenMs = nowMs;
+            Gui::updateBombTimer(lastBombRemain, true);
+        } else if (nowMs - lastBombSeenMs <= 500 && lastBombRemain > 0.0f) {
+            Gui::updateBombTimer(lastBombRemain, true);
+        } else {
+            lastBombRemain = 0.0f;
+            Gui::updateBombTimer(0.0f, false);
+        }
+
+        Aim::update(g_proc);
     } else {
         Overlay::hide();
     }
+}
+
+// ============================================================
+//  Poll timer — fires every Config::pollMs milliseconds
+// ============================================================
+VOID CALLBACK pollTimer(HWND, UINT, UINT_PTR, DWORD) {
+    runTick();
 }
 
 // ============================================================
@@ -125,11 +132,21 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     RegisterHotKey(nullptr, 1, MOD_NOREPEAT, VK_END);
 
     // First tick immediately — no cold-start delay
-    pollTimer(nullptr, 0, 0, 0);
+    runTick();
 
-    // Use very aggressive refresh for responsive ESP; configured in GUI but hardcoded for quality
-    const UINT refreshRateMs = 8;
+    // Use aggressive refresh for responsive ESP; configured in GUI but hardcoded for quality
+    const UINT refreshRateMs = 6;
     SetTimer(nullptr, 1, refreshRateMs, pollTimer);
+
+    // Start dedicated high-priority scan thread to reduce timer jitter
+    g_polling = true;
+    g_pollThread = std::thread([]() {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+        while (g_polling) {
+            runTick();
+            Sleep(2);
+        }
+    });
 
     // Single message loop handles all windows + timer in this thread
     MSG msg{};
@@ -143,6 +160,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     }
 
     KillTimer(nullptr, 1);
+    g_polling = false;
+    if (g_pollThread.joinable()) g_pollThread.join();
     UnregisterHotKey(nullptr, 1);
     Overlay::destroy();
     Gui::destroy();

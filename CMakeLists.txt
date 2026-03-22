@@ -4,20 +4,20 @@ project(untitled15)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(untitled15
-    main.cpp
-    overlay.cpp
+    src/main.cpp
+    src/overlay.cpp
 
     # GUI — one file per responsibility
-    gui.cpp
-    gui_draw.cpp
-    gui_tab_config.cpp
-    gui_tab_visuals.cpp
-    gui_tab_memory.cpp
-    gui_tab_hotkeys.cpp
-    gui_tab_debug.cpp
-    gui_tab_about.cpp
-    gui_tab_players.cpp
-    player_scanner.cpp
+    src/gui_tab_config.cpp
+    src/gui_tab_visuals.cpp
+    src/gui_tab_memory.cpp
+    src/gui_tab_hotkeys.cpp
+    src/gui_tab_debug.cpp
+    src/gui_tab_about.cpp
+    src/gui_tab_players.cpp
+    src/player_scanner.cpp
+    src/bomb_found.cpp
+    src/aim.cpp
 )
 
 target_include_directories(untitled15 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
