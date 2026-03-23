@@ -407,11 +407,14 @@ void Aim::update(mem::ProcessMemory* proc) {
     bool cs2Foreground = isCs2ForegroundWindow();
     bool altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
     bool autoAim = Gui::getVisuals().autoAim;
-    bool autoFire = autoAim; // auto-fire follows auto-aim setting
-    bool aimHold = true; // change to false if you want permanent hold mode by default
+    bool altAutoFire = Gui::getVisuals().altAutoFire;
+    bool autoFire = autoAim || (altDown && altAutoFire); // auto-fire: autoAim always, ALT only if altAutoFire enabled
+    bool aimHold = true; // if true, ALT or auto-aim required to aim mode
     bool leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    bool keyHeld = leftDown;
-    bool shouldAct = (aimHold ? keyHeld : true) && (autoAim || altDown);
+    bool altHold = altDown;
+    bool keyHeld = altHold;
+    // left click alone should NOT activate aimbot (only normal manual fire)
+    bool shouldAct = (aimHold ? keyHeld : true) && (autoAim || altHold);
 
     if (!cs2Foreground || !shouldAct) return;
 
@@ -831,6 +834,18 @@ void Aim::update(mem::ProcessMemory* proc) {
             SendInput(1, &rcsInput, sizeof(INPUT));
         } else {
             previousRcsDelta = {0.0f, 0.0f, 0.0f};
+        }
+    }
+
+    // Guard: don't shoot at dead enemies
+    if (g_targetPawn) {
+        auto tgtHpOpt = proc->read<int32_t>(g_targetPawn + Offsets::m_iHealth::STATIC_PTR);
+        if (!tgtHpOpt || *tgtHpOpt <= 0) {
+            Gui::log("[DBG] target dead before shoot, dropping 0x%llX", (unsigned long long)g_targetPawn);
+            g_targetPawn = 0;
+            g_pendingPawn = 0;
+            g_pendingFrames = 0;
+            return;
         }
     }
 

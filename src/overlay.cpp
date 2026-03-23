@@ -68,16 +68,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
             RECT rc;
             GetClientRect(hwnd, &rc);
+            int w = rc.right, h = rc.bottom;
 
-            // Clear the whole layer first so we don't keep previous frame trails.
-            // Use a distinct color key (magenta) to avoid black/color collisions from text or game blits.
+            // Double-buffer: draw everything off-screen first, then blit in one shot.
+            // This eliminates the white flash caused by the window being briefly unpainted.
+            HDC memDC  = CreateCompatibleDC(hdc);
+            HBITMAP memBmp = CreateCompatibleBitmap(hdc, w, h);
+            HGDIOBJ oldBmp = SelectObject(memDC, memBmp);
+
+            // Clear to color key (magenta = transparent)
             HBRUSH clearBrush = CreateSolidBrush(RGB(255,0,255));
-            FillRect(hdc, &rc, clearBrush);
+            FillRect(memDC, &rc, clearBrush);
             DeleteObject(clearBrush);
 
-            // Draw player pawn rectangles (and bomb markers) (if any)
+            // Draw player pawn rectangles (and bomb markers)
             for (const Overlay::PawnRenderInfo& p : s_pawnRects) {
-                // Only draw players if drawBox enabled, bomb always draws marker
                 if (!p.drawBox && !p.isBomb) continue;
 
                 COLORREF boxColor;
@@ -86,12 +91,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 } else {
                     boxColor = p.teamA ? RGB(100,255,100) : RGB(40,255,255);
                 }
-                if (p.drawBox) drawStyledBox(hdc, p.rect, boxColor);
+                if (p.drawBox) drawStyledBox(memDC, p.rect, boxColor);
 
-                // draw name/label above the box
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, RGB(255,255,255));
-                HFONT of = (HFONT)SelectObject(hdc, GetStockObject(DEFAULT_GUI_FONT));
+                // name/label above the box
+                SetBkMode(memDC, TRANSPARENT);
+                SetTextColor(memDC, RGB(255,255,255));
+                HFONT of = (HFONT)SelectObject(memDC, GetStockObject(DEFAULT_GUI_FONT));
                 int textX = p.rect.left;
                 int textY = p.rect.top - 16;
 
@@ -103,36 +108,43 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 } else {
                     strncpy_s(label, p.name, _TRUNCATE);
                 }
-                TextOutA(hdc, textX, textY, label, (int)strlen(label));
-                SelectObject(hdc, of);
+                TextOutA(memDC, textX, textY, label, (int)strlen(label));
+                SelectObject(memDC, of);
 
-                // draw vertical health bar on the right side
+                // vertical health bar
                 int barW = 6;
                 int barPadding = 4;
-                int barTop = p.rect.top + 1;
+                int barTop    = p.rect.top + 1;
                 int barBottom = p.rect.bottom - 1;
-                int barLeft = p.rect.right + barPadding;
-                int barRight = barLeft + barW;
+                int barLeft   = p.rect.right + barPadding;
+                int barRight  = barLeft + barW;
 
-                float frac = std::clamp(p.health / 100.0f, 0.0f, 1.0f);
-                int fullH = barBottom - barTop;
-                int filledH = (int)(fullH * frac);
-                int fillTop = barBottom - filledH;
+                float frac   = std::clamp(p.health / 100.0f, 0.0f, 1.0f);
+                int fullH    = barBottom - barTop;
+                int filledH  = (int)(fullH * frac);
+                int fillTop  = barBottom - filledH;
 
-                // base outline
                 RECT baseBar = { barLeft, barTop, barRight, barBottom };
-                FrameRect(hdc, &baseBar, CreateSolidBrush(RGB(50,50,50)));
+                HBRUSH outlineBrush = CreateSolidBrush(RGB(50,50,50));
+                FrameRect(memDC, &baseBar, outlineBrush);
+                DeleteObject(outlineBrush);
 
-                // health fill color
                 COLORREF hColor = RGB(
                     (BYTE)(255 * (1.0f - frac)),
                     (BYTE)(255 * frac),
                     0);
                 RECT fillBar = { barLeft+1, fillTop, barRight-1, barBottom-1 };
                 HBRUSH hBrush = CreateSolidBrush(hColor);
-                FillRect(hdc, &fillBar, hBrush);
+                FillRect(memDC, &fillBar, hBrush);
                 DeleteObject(hBrush);
             }
+
+            // Blit the completed frame to the screen in one atomic operation
+            BitBlt(hdc, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+
+            SelectObject(memDC, oldBmp);
+            DeleteObject(memBmp);
+            DeleteDC(memDC);
 
             EndPaint(hwnd, &ps);
             return 0;
@@ -184,7 +196,7 @@ void show() {
         SetLayeredWindowAttributes(s_hwnd, RGB(255,0,255), (BYTE)vis.opacity,
                                    LWA_COLORKEY | LWA_ALPHA);
         ShowWindow(s_hwnd, SW_SHOWNOACTIVATE);
-        InvalidateRect(s_hwnd, nullptr, TRUE);
+        InvalidateRect(s_hwnd, nullptr, FALSE);
         s_visible = true;
     }
 }
@@ -201,7 +213,7 @@ void destroy() {
 }
 
 void repaint() {
-    if (s_hwnd) InvalidateRect(s_hwnd, nullptr, TRUE);
+    if (s_hwnd) InvalidateRect(s_hwnd, nullptr, FALSE);
 }
 
 HWND hwnd() { return s_hwnd; }
@@ -211,7 +223,7 @@ void setPawnRects(const std::vector<PawnRenderInfo>& pawns) {
     if (s_hwnd) {
         // Invalidate async and let the message queue handle paint. This is more
         // efficient than blocking UpdateWindow() every frame.
-        InvalidateRect(s_hwnd, nullptr, TRUE);
+        InvalidateRect(s_hwnd, nullptr, FALSE);
     }
 }
 
@@ -219,7 +231,7 @@ void setOverlayBounds(int x, int y, int width, int height) {
     if (!s_hwnd) return;
     SetWindowPos(s_hwnd, HWND_TOPMOST, x, y, width, height,
                  SWP_NOACTIVATE | SWP_NOZORDER);
-    InvalidateRect(s_hwnd, nullptr, TRUE);
+    InvalidateRect(s_hwnd, nullptr, FALSE);
 }
 
 void setOverlayPosition(int x, int y) {
@@ -228,7 +240,7 @@ void setOverlayPosition(int x, int y) {
     GetWindowRect(s_hwnd, &rc);
     SetWindowPos(s_hwnd, HWND_TOPMOST, x, y, rc.right-rc.left, rc.bottom-rc.top,
                  SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
-    InvalidateRect(s_hwnd, nullptr, TRUE);
+    InvalidateRect(s_hwnd, nullptr, FALSE);
 }
 
 } // namespace Overlay

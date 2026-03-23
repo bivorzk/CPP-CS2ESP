@@ -15,23 +15,6 @@ namespace Gui {
 
 struct Vec3 { float x, y, z; };
 
-static Vec3 normalizeVec(const Vec3& v) {
-    float len = sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
-    if (len < 1e-6f) return {0,0,0};
-    return { v.x/len, v.y/len, v.z/len };
-}
-
-static float dotVec(const Vec3& a, const Vec3& b) {
-    return a.x*b.x + a.y*b.y + a.z*b.z;
-}
-
-static Vec3 angleToDirection(const Vec3& ang) {
-    float pitch = ang.x * (3.14159265358979323846f/180.0f);
-    float yaw   = ang.y * (3.14159265358979323846f/180.0f);
-    float cosPitch = cosf(pitch);
-    return { cosPitch * cosf(yaw), cosPitch * sinf(yaw), -sinf(pitch) };
-}
-
 bool worldToScreen(const Vec3& world,
                    const std::array<float, 16>& m,
                    int width, int height,
@@ -131,23 +114,9 @@ bool scanPlayers(mem::ProcessMemory* proc) {
     uintptr_t localPlayerPawn = localPlayerPawnOpt.value_or(0);
 
     int localTeam = -1;
-    Vec3 localEyeOrigin{0,0,0};
-    Vec3 localViewAngles{0,0,0};
     if (localPlayerPawn) {
         auto localTeamOpt = proc->read<int32_t>(localPlayerPawn + Offsets::m_iTeamNum::STATIC_PTR);
         if (localTeamOpt) localTeam = *localTeamOpt;
-
-        auto originOpt = proc->read<Vec3>(localPlayerPawn + Offsets::m_vecOrigin::STATIC_PTR);
-        auto viewOffsetOpt = proc->read<Vec3>(localPlayerPawn + Offsets::m_vecViewOffset::STATIC_PTR);
-        if (originOpt && viewOffsetOpt) {
-            localEyeOrigin = *originOpt;
-            localEyeOrigin.x += viewOffsetOpt->x;
-            localEyeOrigin.y += viewOffsetOpt->y;
-            localEyeOrigin.z += viewOffsetOpt->z;
-        }
-
-        auto anglesOpt = proc->read<Vec3>(localPlayerPawn + Offsets::m_angEyeAngles::STATIC_PTR);
-        if (anglesOpt) localViewAngles = *anglesOpt;
     }
 
     if (!localPlayerControllerOpt) {
@@ -156,9 +125,6 @@ bool scanPlayers(mem::ProcessMemory* proc) {
     if (!localPlayerPawn) {
         Gui::log("[-] scanPlayers: local player pawn pointer invalid (offset 0x%llX)", (unsigned long long)Offsets::dwLocalPlayerPawn::STATIC_PTR);
     }
-
-    Vec3 localForward = normalizeVec(angleToDirection(localViewAngles));
-    bool haveLocalView = (localEyeOrigin.x != 0.0f || localEyeOrigin.y != 0.0f || localEyeOrigin.z != 0.0f);
 
     uintptr_t entityList = *entityListOpt;
     auto listEntryOpt = proc->read<uintptr_t>(entityList + Offsets::EntityList::ENTRY_OFFSET);
@@ -315,15 +281,6 @@ bool scanPlayers(mem::ProcessMemory* proc) {
                     bool footOk = worldToScreen(origin, viewMatrix, gameW, gameH, footPt);
                     bool headOk = worldToScreen(head, viewMatrix, gameW, gameH, headPt);
 
-                    // Avoid projection artifacts when target is behind camera: require roughly forward-facing
-                    if (haveLocalView) {
-                        Vec3 toTarget{ head.x - localEyeOrigin.x, head.y - localEyeOrigin.y, head.z - localEyeOrigin.z };
-                        Vec3 toTargetN = normalizeVec(toTarget);
-                        if (dotVec(localForward, toTargetN) < 0.1f) {
-                            headOk = false;
-                        }
-                    }
-
                     if (footOk && headOk) {
                         int left = std::min(footPt.x, headPt.x) - 12;
                         int right = std::max(footPt.x, headPt.x) + 12;
@@ -434,28 +391,7 @@ bool scanPlayers(mem::ProcessMemory* proc) {
     }
 
     // Real-time mode: update overlays every tick, no gating.
-    // Smooth visualization by blending with last frame to reduce jitter.
-    // Higher value closer to 1.0 gives faster response.
-    const float smoothFactor = 0.99f; // 0.99 = very little delay, little jitter smoothing
-    const int snapThreshold = 12; // pixels; large moves snap to avoid lag
-    for (auto& rect : pawnRects) {
-        for (const auto& oldRect : prevPawnRects) {
-            if (oldRect.teamA == rect.teamA && oldRect.isBomb == rect.isBomb && strcmp(oldRect.name, rect.name) == 0) {
-                int dx = abs(rect.rect.left - oldRect.rect.left);
-                int dy = abs(rect.rect.top - oldRect.rect.top);
-                if (dx > snapThreshold || dy > snapThreshold) {
-                    // big movement: avoid lagging behind; snap to target quickly
-                    break;
-                }
-                rect.rect.left   = oldRect.rect.left   + (int)((rect.rect.left   - oldRect.rect.left)   * smoothFactor);
-                rect.rect.top    = oldRect.rect.top    + (int)((rect.rect.top    - oldRect.rect.top)    * smoothFactor);
-                rect.rect.right  = oldRect.rect.right  + (int)((rect.rect.right  - oldRect.rect.right)  * smoothFactor);
-                rect.rect.bottom = oldRect.rect.bottom + (int)((rect.rect.bottom - oldRect.rect.bottom) * smoothFactor);
-                break;
-            }
-        }
-    }
-
+    // This can be expensive but gives immediate player/bomb tracking during camera/player motion.
     prevPawnRects = pawnRects;
     Overlay::setPawnRects(pawnRects);
 

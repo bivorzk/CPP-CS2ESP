@@ -50,6 +50,13 @@ void buildVisuals(HWND p) {
     SendMessage(cb2, BM_SETCHECK, s_visuals.autoAim ? BST_CHECKED : BST_UNCHECKED, 0);
     y += 26;
 
+    HWND cbAltFire = CreateWindowA("BUTTON", "ALT shoots (off = ALT tracks only)",
+        WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
+        x, y, 260, 20,
+        p, (HMENU)(intptr_t)ID_VIS_ALT_FIRE, s_hInst, nullptr);
+    SendMessage(cbAltFire, BM_SETCHECK, s_visuals.altAutoFire ? BST_CHECKED : BST_UNCHECKED, 0);
+    y += 26;
+
     HWND cb3 = CreateWindowA("BUTTON", "Strict visibility (distance + cone)",
         WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX,
         x, y, 260, 20,
@@ -93,7 +100,8 @@ bool handleVisuals(WPARAM wp) {
             int b = (int)SendMessage(GetDlgItem(p,ID_VIS_B), TBM_GETPOS, 0,0);
             s_visuals.color = RGB(r,g,b);
             s_visuals.showTeamABoxes = (SendMessage(GetDlgItem(p, ID_VIS_SHOW_TEAM_A), BM_GETCHECK, 0, 0) == BST_CHECKED);
-            s_visuals.autoAim        = (SendMessage(GetDlgItem(p, ID_VIS_AUTO_AIM), BM_GETCHECK, 0, 0) == BST_CHECKED);
+            s_visuals.autoAim        = (SendMessage(GetDlgItem(p, ID_VIS_AUTO_AIM),  BM_GETCHECK, 0, 0) == BST_CHECKED);
+            s_visuals.altAutoFire    = (SendMessage(GetDlgItem(p, ID_VIS_ALT_FIRE),   BM_GETCHECK, 0, 0) == BST_CHECKED);
             s_visuals.strictVisibility = (SendMessage(GetDlgItem(p, ID_VIS_STRICT_VIS), BM_GETCHECK, 0, 0) == BST_CHECKED);
             s_visuals.aimPart = (int)SendMessage(GetDlgItem(p, ID_VIS_AIM_PART), CB_GETCURSEL, 0, 0);
             GetWindowTextA(GetDlgItem(p, ID_VIS_COOLDOWN), buf, 16); s_visuals.visCooldownFrames = atoi(buf);
