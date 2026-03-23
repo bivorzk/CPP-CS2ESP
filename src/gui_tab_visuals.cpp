@@ -57,6 +57,18 @@ void buildVisuals(HWND p) {
     SendMessage(cb3, BM_SETCHECK, s_visuals.strictVisibility ? BST_CHECKED : BST_UNCHECKED, 0);
     y += 26;
 
+    mkLabel(p, "Aim target part", x, y, 100, 16);
+    HWND cb4 = CreateWindowA("COMBOBOX", "",
+        WS_CHILD|WS_VISIBLE|CBS_DROPDOWNLIST,
+        x+110, y-2, 130, 120,
+        p, (HMENU)(intptr_t)ID_VIS_AIM_PART, s_hInst, nullptr);
+    SendMessage(cb4, CB_ADDSTRING, 0, (LPARAM)"Head");
+    SendMessage(cb4, CB_ADDSTRING, 0, (LPARAM)"Body");
+    SendMessage(cb4, CB_ADDSTRING, 0, (LPARAM)"Arms");
+    SendMessage(cb4, CB_ADDSTRING, 0, (LPARAM)"Legs");
+    SendMessage(cb4, CB_SETCURSEL, s_visuals.aimPart, 0);
+    y += 34;
+
     mkLabel(p, "Target hold frames", x, y, 120, 16);
     char buf2[16];
     sprintf_s(buf2, "%d", s_visuals.visCooldownFrames);
@@ -83,6 +95,7 @@ bool handleVisuals(WPARAM wp) {
             s_visuals.showTeamABoxes = (SendMessage(GetDlgItem(p, ID_VIS_SHOW_TEAM_A), BM_GETCHECK, 0, 0) == BST_CHECKED);
             s_visuals.autoAim        = (SendMessage(GetDlgItem(p, ID_VIS_AUTO_AIM), BM_GETCHECK, 0, 0) == BST_CHECKED);
             s_visuals.strictVisibility = (SendMessage(GetDlgItem(p, ID_VIS_STRICT_VIS), BM_GETCHECK, 0, 0) == BST_CHECKED);
+            s_visuals.aimPart = (int)SendMessage(GetDlgItem(p, ID_VIS_AIM_PART), CB_GETCURSEL, 0, 0);
             GetWindowTextA(GetDlgItem(p, ID_VIS_COOLDOWN), buf, 16); s_visuals.visCooldownFrames = atoi(buf);
             if (s_visuals.visCooldownFrames < 0) s_visuals.visCooldownFrames = 0;
             return true;

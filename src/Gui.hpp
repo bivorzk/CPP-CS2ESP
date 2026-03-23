@@ -37,6 +37,7 @@ namespace Gui {
         int      posX, posY;
         bool     showTeamABoxes; // draw friendly team boxes in overlay (Team A)
         bool     autoAim;        // enable auto aim+shoot without key hold
+        int      aimPart;        // 0=head, 1=body, 2=arms, 3=legs
 
         bool     strictVisibility;  // enforce strict locally-visible criteria
         int      visCooldownFrames; // number of frames to confirm new target / keep old after lost

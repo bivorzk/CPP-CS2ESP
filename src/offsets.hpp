@@ -156,6 +156,36 @@ namespace Offsets {
         inline constexpr uintptr_t STATIC_PTR = 0x2317740;  // planted C4 list pointer
         inline const std::vector<uintptr_t> CHAIN = { };
     }
+    namespace m_bBombPlanted {
+        inline constexpr uintptr_t STATIC_PTR = 0x00001170; // C_PlantedC4 m_bBombTicking (updated per dump)
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+
+    namespace m_pGameSceneNode {
+        inline constexpr uintptr_t STATIC_PTR = 0x338; 
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+
+    namespace m_modelState {
+        inline constexpr uintptr_t STATIC_PTR = 0x160; 
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+
+    namespace boneArrayOffset {
+        inline constexpr uintptr_t STATIC_PTR = 0x80;
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+    namespace boneStride {
+        inline constexpr uintptr_t STATIC_PTR = 0x80;
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+    namespace boneCount {
+        inline constexpr uintptr_t STATIC_PTR = 28;
+        inline const std::vector<uintptr_t> CHAIN = { };
+    }
+
+    // m_pGameSceneNode = 0x338
+    // m_modelState = 0x160
 
     // Add more namespaces below as you find offsets ...
 

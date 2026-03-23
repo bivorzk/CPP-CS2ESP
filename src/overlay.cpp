@@ -57,6 +57,11 @@ static void drawStyledBox(HDC hdc, RECT r, COLORREF color) {
 
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+        case WM_ERASEBKGND: {
+            // Prevent flicker and white “not painted yet” content on composited fullscreen.
+            return 1;
+        }
+
         case WM_PAINT: {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hwnd, &ps);
@@ -65,7 +70,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             GetClientRect(hwnd, &rc);
 
             // Clear the whole layer first so we don't keep previous frame trails.
-            HBRUSH clearBrush = CreateSolidBrush(RGB(0,0,0));
+            // Use a distinct color key (magenta) to avoid black/color collisions from text or game blits.
+            HBRUSH clearBrush = CreateSolidBrush(RGB(255,0,255));
             FillRect(hdc, &rc, clearBrush);
             DeleteObject(clearBrush);
 
@@ -155,7 +161,7 @@ bool create(HINSTANCE hInst) {
     int posY = (sh - vis.height) / 2;
 
     s_hwnd = CreateWindowExA(
-        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         CLS, "",
         WS_POPUP,
         posX, posY, vis.width, vis.height,
@@ -163,9 +169,8 @@ bool create(HINSTANCE hInst) {
     );
     if (!s_hwnd) return false;
 
-    // Pure black (0x000000) becomes transparent — the hollow interior
-    // is never painted, so it remains black → see-through.
-    SetLayeredWindowAttributes(s_hwnd, RGB(0,0,0), 0, LWA_COLORKEY);
+    // The overlay content is drawn to magenta (0xFF00FF) when cleared, then treated as transparent.
+    SetLayeredWindowAttributes(s_hwnd, RGB(255,0,255), 0, LWA_COLORKEY);
     return true;
 }
 
@@ -176,7 +181,7 @@ void show() {
         SetWindowPos(s_hwnd, HWND_TOPMOST,
                      vis.posX, vis.posY, vis.width, vis.height,
                      SWP_NOACTIVATE);
-        SetLayeredWindowAttributes(s_hwnd, RGB(0,0,0), (BYTE)vis.opacity,
+        SetLayeredWindowAttributes(s_hwnd, RGB(255,0,255), (BYTE)vis.opacity,
                                    LWA_COLORKEY | LWA_ALPHA);
         ShowWindow(s_hwnd, SW_SHOWNOACTIVATE);
         InvalidateRect(s_hwnd, nullptr, TRUE);

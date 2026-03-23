@@ -13,7 +13,7 @@ HWND      s_tabBtns[TAB_COUNT] = {};
 int       s_activeTab = 0;
 
 Config      s_config  = { "cs2.exe", 8 };   // reduced poll interval for near-realtime updates
-VisualConfig s_visuals = { 300, 200, 3, 255, RGB(255,255,255), 0, 0, false, false, false, 0 };
+VisualConfig s_visuals = { 300, 200, 3, 255, RGB(255,255,255), 0, 0, false, false, 0, false, 0 };
 
 const char* TAB_NAMES[TAB_COUNT] = {
     "Config", "Visuals", "Memory", "Hotkeys", "Debug", "About", "Players"

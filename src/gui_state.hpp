@@ -19,8 +19,8 @@ namespace Gui {
 // ============================================================
 //  Window layout constants
 // ============================================================
-static constexpr int WIN_W     = 580;
-static constexpr int WIN_H     = 460;
+static constexpr int WIN_W     = 700;
+static constexpr int WIN_H     = 520;
 static constexpr int SIDEBAR_W = 122;
 static constexpr int TAB_H     = 38;
 static constexpr int TAB_COUNT = 7;
@@ -36,7 +36,7 @@ enum CtrlID : int {
     ID_VIS_R,                  ID_VIS_R_LBL,   ID_VIS_G, ID_VIS_G_LBL,
     ID_VIS_B,                  ID_VIS_B_LBL,
     ID_VIS_SHOW_TEAM_A,
-    ID_VIS_AUTO_AIM, ID_VIS_STRICT_VIS, ID_VIS_COOLDOWN, ID_MEM_LIST         = 300, ID_MEM_CURVAL,  ID_MEM_WRITEVAL, ID_MEM_WRITEBTN,
+    ID_VIS_AUTO_AIM, ID_VIS_STRICT_VIS, ID_VIS_AIM_PART, ID_VIS_COOLDOWN, ID_MEM_LIST         = 300, ID_MEM_CURVAL,  ID_MEM_WRITEVAL, ID_MEM_WRITEBTN,
     ID_HK_QUIT          = 400, ID_HK_TOGGLE,
     ID_DBG_LOG          = 500, ID_DBG_CLEAR,
     ID_PLAYERS_LIST     = 600,

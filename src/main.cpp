@@ -134,17 +134,15 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     // First tick immediately — no cold-start delay
     runTick();
 
-    // Use aggressive refresh for responsive ESP; configured in GUI but hardcoded for quality
-    const UINT refreshRateMs = 6;
-    SetTimer(nullptr, 1, refreshRateMs, pollTimer);
-
-    // Start dedicated high-priority scan thread to reduce timer jitter
+    // Start dedicated high-priority scan thread. Use configured poll interval (min 10ms).
     g_polling = true;
     g_pollThread = std::thread([]() {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
         while (g_polling) {
             runTick();
-            Sleep(2);
+            DWORD pollMs = Gui::getConfig().pollMs;
+            if (pollMs < 10) pollMs = 10;
+            Sleep(pollMs);
         }
     });
 
@@ -159,7 +157,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         DispatchMessage(&msg);
     }
 
-    KillTimer(nullptr, 1);
     g_polling = false;
     if (g_pollThread.joinable()) g_pollThread.join();
     UnregisterHotKey(nullptr, 1);
