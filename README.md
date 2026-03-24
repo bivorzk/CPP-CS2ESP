@@ -16,8 +16,8 @@ This repository contains a Counter-Strike 2 external overlay and aimbot proof-of
 Windows (MSYS2 / MinGW):
 
 ```sh
-cd C:\Users\bivorzk\CLionProjects\untitled15
-g++ src/main.cpp src/overlay.cpp src/gui.cpp src/gui_draw.cpp src/gui_tab_config.cpp src/gui_tab_debug.cpp src/gui_tab_hotkeys.cpp src/gui_tab_memory.cpp src/gui_tab_visuals.cpp src/gui_tab_about.cpp src/gui_tab_players.cpp src/player_scanner.cpp src/bomb_found.cpp src/aim.cpp -o untitled15.exe -static -std=c++23 -mwindows -I. -luser32 -lgdi32 -lopengl32 -lcomctl32 -ldwmapi -DDEBUG
+cd C:\Users\bivorzk\projects\CPP-CS2ESP
+g++ src/main.cpp src/app/app.cpp src/aim/aim.cpp src/aim/aim_aux.cpp src/overlay/overlay.cpp src/gui/gui.cpp src/gui/gui_draw.cpp src/gui/gui_tab_config.cpp src/gui/gui_tab_debug.cpp src/gui/gui_tab_hotkeys.cpp src/gui/gui_tab_memory.cpp src/gui/gui_tab_visuals.cpp src/gui/gui_tab_about.cpp src/gui/gui_tab_players.cpp src/game/player_scan/player_scanner.cpp src/game/player_scan/player_scanner_helpers.cpp src/game/bomb/bomb_found.cpp -o untitled15.exe -static -std=c++23 -mwindows -I. -Isrc -Isrc/app -Isrc/aim -Isrc/gui -Isrc/overlay -Isrc/game -Isrc/game/player_scan -Isrc/game/bomb -luser32 -lgdi32 -lopengl32 -lcomctl32 -ldwmapi -DDEBUG
 ```
 
 ## Usage

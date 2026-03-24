@@ -5,22 +5,36 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_executable(untitled15
     src/main.cpp
-    src/overlay.cpp
+    src/app/app.cpp
+    src/aim/aim_aux.cpp
+    src/overlay/overlay.cpp
+    src/aim/aim.cpp
 
     # GUI — one file per responsibility
-    src/gui_tab_config.cpp
-    src/gui_tab_visuals.cpp
-    src/gui_tab_memory.cpp
-    src/gui_tab_hotkeys.cpp
-    src/gui_tab_debug.cpp
-    src/gui_tab_about.cpp
-    src/gui_tab_players.cpp
-    src/player_scanner.cpp
-    src/bomb_found.cpp
-    src/aim.cpp
+    src/gui/gui_tab_config.cpp
+    src/gui/gui_tab_visuals.cpp
+    src/gui/gui_tab_memory.cpp
+    src/gui/gui_tab_hotkeys.cpp
+    src/gui/gui_tab_debug.cpp
+    src/gui/gui_tab_about.cpp
+    src/gui/gui_tab_players.cpp
+    src/game/player_scan/player_scanner.cpp
+    src/game/player_scan/player_scanner_helpers.cpp
+    src/game/bomb/bomb_found.cpp
 )
 
-target_include_directories(untitled15 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+target_include_directories(untitled15 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/aim
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/overlay
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/player_scan
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/game/bomb
+)
 
 target_compile_definitions(untitled15 PRIVATE
     NOMINMAX
