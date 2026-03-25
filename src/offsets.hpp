@@ -24,22 +24,22 @@ namespace Offsets {
     inline constexpr const char* MODULE = "client.dll";
 
     namespace dwEntityList {
-        inline constexpr uintptr_t STATIC_PTR = 38466152;   // entity list pointer
+        inline constexpr uintptr_t STATIC_PTR = 0x24B0258;   // entity list pointer
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
     namespace dwLocalPlayerController {
-        inline constexpr std::ptrdiff_t STATIC_PTR = 0x22F4188; // local player controller offset
+        inline constexpr std::ptrdiff_t STATIC_PTR = 0x22F5028; // local player controller offset
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
     namespace dwLocalPlayerPawn {
-        inline constexpr std::ptrdiff_t STATIC_PTR = 0x2069B50; // local player pawn offset
+        inline constexpr std::ptrdiff_t STATIC_PTR = 0x206A9E0; // local player pawn offset
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
     namespace dwViewMatrix {
-        inline constexpr uintptr_t STATIC_PTR = 0x230FF20;  // view matrix pointer (example)
+        inline constexpr uintptr_t STATIC_PTR = 0x2310F10;  // view matrix pointer (example)
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
@@ -153,7 +153,7 @@ namespace Offsets {
     }
 
     namespace dwPlantedC4 {
-        inline constexpr uintptr_t STATIC_PTR = 0x2317740;  // planted C4 list pointer
+        inline constexpr uintptr_t STATIC_PTR = 0x2318A60;  // planted C4 list pointer
         inline const std::vector<uintptr_t> CHAIN = { };
     }
     namespace m_bBombPlanted {
