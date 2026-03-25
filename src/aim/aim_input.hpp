@@ -4,6 +4,6 @@
 
 namespace Aim {
 
-void moveMouseForAngleDelta(const Vec3& delta, float sensitivity);
+void moveMouseForAngleDelta(const Vec3& deltaAngle, float sensitivity, float smoothFactor = 0.35f);
 
 } // namespace Aim

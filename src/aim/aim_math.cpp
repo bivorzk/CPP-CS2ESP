@@ -4,6 +4,9 @@
 
 namespace Aim {
 
+
+constexpr float M_PI = 3.14159265358979323846f;
+
 float clampf01(float v, float minv, float maxv) {
     if (v < minv) return minv;
     if (v > maxv) return maxv;
@@ -21,8 +24,8 @@ Vec3 calcAngle(const Vec3& src, const Vec3& dst) {
     float hyp = std::sqrt(delta.x * delta.x + delta.y * delta.y);
 
     Vec3 ang;
-    ang.x = -std::atan2(delta.z, hyp) * (180.0f / 3.14159265358979323846f);
-    ang.y = std::atan2(delta.y, delta.x) * (180.0f / 3.14159265358979323846f);
+    ang.x = -std::atan2(delta.z, hyp) * (180.0f / M_PI);
+    ang.y = std::atan2(delta.y, delta.x) * (180.0f / M_PI);
     ang.z = 0.0f;
 
     ang.x = clampf01(ang.x, -89.0f, 89.0f);
@@ -31,8 +34,8 @@ Vec3 calcAngle(const Vec3& src, const Vec3& dst) {
 }
 
 Vec3 angleToDirection(const Vec3& ang) {
-    float radPitch = ang.x * (3.14159265358979323846f / 180.0f);
-    float radYaw = ang.y * (3.14159265358979323846f / 180.0f);
+    float radPitch = ang.x * (M_PI / 180.0f);
+    float radYaw = ang.y * (M_PI / 180.0f);
     return { std::cos(radPitch) * std::cos(radYaw),
              std::cos(radPitch) * std::sin(radYaw),
              -std::sin(radPitch) };
@@ -59,7 +62,7 @@ FovResult GetTargetFOVAndDistance(const Vec3& eyePos, const Vec3& viewDir, const
     if (distance <= 0.001f) return {180.0f, 0.0f};
     Vec3 toTargetN = normalize(toTarget);
     float dot = std::clamp(dotProduct(forward, toTargetN), -1.0f, 1.0f);
-    float fovDeg = std::acos(dot) * (180.0f / 3.14159265358979323846f);
+    float fovDeg = std::acos(dot) * (180.0f / M_PI);
     return {fovDeg, distance};
 }
 

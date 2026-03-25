@@ -43,6 +43,6 @@ float calcAimbotScore(float fov, float dist, int health);
 float angdiff(float a, float b);
 Vec3 smoothAim(const Vec3& current, const Vec3& desired, float fraction);
 
-void moveMouseForAngleDelta(const Vec3& delta, float sensitivity);
+void moveMouseForAngleDelta(const Vec3& deltaAngle, float sensitivity, float smoothFactor = 0.35f);
 
 } // namespace Aim

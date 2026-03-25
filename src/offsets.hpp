@@ -105,7 +105,7 @@ namespace Offsets {
     }
 
     namespace m_bSpottedByMask {
-        inline constexpr uintptr_t STATIC_PTR = 0x3F0; // best-effort CS2 spotted mask; may require tuning
+        inline constexpr uintptr_t STATIC_PTR = 0xC; // best-effort CS2 spotted mask; may require tuning
     }
 
     namespace m_flSimulationTime {

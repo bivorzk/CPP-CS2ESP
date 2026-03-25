@@ -6,23 +6,39 @@
 
 namespace Aim {
 
-void moveMouseForAngleDelta(const Vec3& delta, float sensitivity) {
-    const float M_YAW = 0.022f;
+void moveMouseForAngleDelta(const Vec3& deltaAngle, float sensitivity, float smoothFactor = 0.35f)
+{
+    if (std::fabs(deltaAngle.x) < 0.001f && std::fabs(deltaAngle.y) < 0.001f)
+        return;
+
+    const float m_yaw   = 0.022f;   // TODO: make configurable / read from game if possible
+    const float m_pitch = 0.022f;
+
     float sens = sensitivity > 0.01f ? sensitivity : 1.0f;
-    float pixels_per_deg = 1.0f / (sens * M_YAW);
 
-    int dx = (int)std::round(-delta.y * pixels_per_deg);
-    int dy = (int)std::round(delta.x * pixels_per_deg);
+    float pxPerDegYaw   = 1.0f / (sens * m_yaw);
+    float pxPerDegPitch = 1.0f / (sens * m_pitch);
 
-    if (dx == 0 && dy == 0) return;
-    if (dx == 0 && std::fabs(delta.y) > 0.005f) dx = (delta.y > 0) ? -1 : 1;
-    if (dy == 0 && std::fabs(delta.x) > 0.005f) dy = (delta.x > 0) ? 1 : -1;
+    float dxRaw = -deltaAngle.y * pxPerDegYaw   * smoothFactor;
+    float dyRaw =  deltaAngle.x * pxPerDegPitch * smoothFactor;
 
-    INPUT input{};
+    int dx = static_cast<int>(std::round(dxRaw));
+    int dy = static_cast<int>(std::round(dyRaw));
+
+    if (dx == 0 && std::fabs(deltaAngle.y) > 0.003f)
+        dx = (deltaAngle.y > 0) ? -1 : 1;
+    if (dy == 0 && std::fabs(deltaAngle.x) > 0.003f)
+        dy = (deltaAngle.x > 0) ? 1 : -1;
+
+    if (dx == 0 && dy == 0)
+        return;
+
+    INPUT input = {};
     input.type = INPUT_MOUSE;
     input.mi.dwFlags = MOUSEEVENTF_MOVE;
     input.mi.dx = dx;
     input.mi.dy = dy;
+
     SendInput(1, &input, sizeof(INPUT));
 }
 

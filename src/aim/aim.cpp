@@ -758,8 +758,22 @@ void Aim::update(mem::ProcessMemory* proc) {
     if (fabsf(deltaStep.x) < 0.01f && fabsf(deltaStep.y) < 0.01f) {
         Gui::log("[DBG] delta too small, skipping mouse input");
     } else {
-            float cfgSmooth = 0.35f; // adjust based on config if needed
-            moveMouseForAngleDelta(deltaStep, 1.0f, cfgSmooth);
+        // Do not write view angles directly in CS2; use mouse motion to make change apply naturally.
+        moveMouseForAngleDelta(deltaStep, 1.0f);
+    }
+
+    // Keep head points for overlay if needed, but no extra input required.
+    (void)base;
+    (void)curAng;
+
+
+    // Recoil control system
+    if (rcs.enabled && autoFire) {
+        Vec3 aimPunch{0.0f, 0.0f, 0.0f};
+        auto punchOpt = proc->read<Vec3>(localPawn + Offsets::m_aimPunchAngle::STATIC_PTR);
+        if (punchOpt) aimPunch = *punchOpt;
+
+        uintptr_t weaponPawn = 0;
         auto wsOpt = proc->read<uintptr_t>(localPawn + Offsets::m_pWeaponServices::STATIC_PTR);
         if (wsOpt && *wsOpt) {
             auto weaponHandleOpt = proc->read<uint32_t>(*wsOpt + Offsets::m_hActiveWeapon::STATIC_PTR);
