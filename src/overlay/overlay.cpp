@@ -70,6 +70,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             GetClientRect(hwnd, &rc);
             int w = rc.right, h = rc.bottom;
 
+            static HBRUSH s_outlineBrush = CreateSolidBrush(RGB(50,50,50));
+            static HFONT  s_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+
             // Double-buffer: draw everything off-screen first, then blit in one shot.
             // This eliminates the white flash caused by the window being briefly unpainted.
             HDC memDC  = CreateCompatibleDC(hdc);
@@ -96,7 +99,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 // name/label above the box
                 SetBkMode(memDC, TRANSPARENT);
                 SetTextColor(memDC, RGB(255,255,255));
-                HFONT of = (HFONT)SelectObject(memDC, GetStockObject(DEFAULT_GUI_FONT));
+                SelectObject(memDC, s_font);
                 int textX = p.rect.left;
                 int textY = p.rect.top - 16;
 
@@ -109,7 +112,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     strncpy_s(label, p.name, _TRUNCATE);
                 }
                 TextOutA(memDC, textX, textY, label, (int)strlen(label));
-                SelectObject(memDC, of);
 
                 // vertical health bar
                 int barW = 6;
@@ -125,9 +127,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 int fillTop  = barBottom - filledH;
 
                 RECT baseBar = { barLeft, barTop, barRight, barBottom };
-                HBRUSH outlineBrush = CreateSolidBrush(RGB(50,50,50));
-                FrameRect(memDC, &baseBar, outlineBrush);
-                DeleteObject(outlineBrush);
+                FrameRect(memDC, &baseBar, s_outlineBrush);
 
                 COLORREF hColor = RGB(
                     (BYTE)(255 * (1.0f - frac)),

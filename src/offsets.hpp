@@ -88,6 +88,12 @@ namespace Offsets {
         inline constexpr uintptr_t ABS_ORIGIN = 0x138;    // common abs origin fallback
     }
 
+    namespace m_vecAbsVelocity {
+        inline constexpr uintptr_t STATIC_PTR = 0x3E0;  // pawn absolute velocity (example/needs validation)
+    }
+
+
+
     namespace m_vecViewOffset {
         inline constexpr uintptr_t STATIC_PTR = 0xD58;   // camera-relative offset (example)
     }

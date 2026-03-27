@@ -133,10 +133,10 @@ void App::runTick() {
     if (running) {
         Overlay::show();
 
-        bool changed = PlayerScanner::scanPlayers(proc_.get());
+        auto bombInfo = Bomb::Finder::read(proc_.get());
+        bool changed = PlayerScanner::scanPlayers(proc_.get(), &bombInfo);
         (void)changed;
 
-        auto bombInfo = Bomb::Finder::read(proc_.get());
         uint64_t nowMs = GetTickCount64();
 
         if (bombInfo.valid && bombInfo.blowTime > 0.0f) {

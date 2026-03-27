@@ -8,20 +8,23 @@
 
 namespace Bomb {
 
+static bool s_bombDebug = false;  // toggle to reduce bomb debug spam
+#define BOMB_LOG(...) do { if (s_bombDebug) Gui::log(__VA_ARGS__); } while(0)
+
 Info Finder::read(mem::ProcessMemory* proc) {
     Info info;
     if (!proc) return info;
 
     uintptr_t base = proc->getModuleBase(Offsets::MODULE);
     if (base == 0) {
-        Gui::log("[Bomb] module base not found: %s", Offsets::MODULE);
+        BOMB_LOG("[Bomb] module base not found: %s", Offsets::MODULE);
         return info;
     }
 
     uintptr_t addr = base + PlantedC4Offset;
     auto plantedListOpt = proc->read<uintptr_t>(addr);
     if (!plantedListOpt || *plantedListOpt == 0) {
-        Gui::log("[Bomb] dwPlantedC4 read failed @ %s + 0x%llX / 0x%llX", Offsets::MODULE,
+        BOMB_LOG("[Bomb] dwPlantedC4 read failed @ %s + 0x%llX / 0x%llX", Offsets::MODULE,
                   (unsigned long long)PlantedC4Offset, (unsigned long long)addr);
         return info;
     }
@@ -96,7 +99,7 @@ Info Finder::read(mem::ProcessMemory* proc) {
         auto defuserHandleOpt = proc->read<uint32_t>(entity + Offsets::C_PlantedC4::m_hBombDefuser);
         if (defuserHandleOpt) {
             if (auto defuserOrigin = resolveHandle(*defuserHandleOpt)) {
-                Gui::log("[Bomb] resolved origin via m_hBombDefuser = %.2f,%.2f,%.2f", defuserOrigin->x, defuserOrigin->y, defuserOrigin->z);
+                BOMB_LOG("[Bomb] resolved origin via m_hBombDefuser = %.2f,%.2f,%.2f", defuserOrigin->x, defuserOrigin->y, defuserOrigin->z);
                 return defuserOrigin;
             }
         }
@@ -107,26 +110,26 @@ Info Finder::read(mem::ProcessMemory* proc) {
     auto scanForOrigin = [&](uintptr_t base) -> std::optional<Info::Vec3> {
         // Prefer standard entity scene-node origin chain where available
         auto sceneNodePtrOpt = proc->read<uintptr_t>(base + Offsets::C_BaseEntity::m_pGameSceneNode);
-        Gui::log("[Bomb] scanForOrigin entity=0x%llX m_pGameSceneNode=0x%llX", (unsigned long long)base,
+        BOMB_LOG("[Bomb] scanForOrigin entity=0x%llX m_pGameSceneNode=0x%llX", (unsigned long long)base,
                   (unsigned long long)(sceneNodePtrOpt ? *sceneNodePtrOpt : 0ULL));
         if (sceneNodePtrOpt && *sceneNodePtrOpt) {
             uintptr_t sceneNode = *sceneNodePtrOpt;
             auto absOriginOpt = proc->read<Info::Vec3>(sceneNode + Offsets::CGameSceneNode::m_vecAbsOrigin);
-            Gui::log("[Bomb] sceneNode=0x%llX m_vecAbsOrigin=%.2f,%.2f,%.2f", (unsigned long long)sceneNode,
+            BOMB_LOG("[Bomb] sceneNode=0x%llX m_vecAbsOrigin=%.2f,%.2f,%.2f", (unsigned long long)sceneNode,
                       absOriginOpt ? absOriginOpt->x : 0.0f,
                       absOriginOpt ? absOriginOpt->y : 0.0f,
                       absOriginOpt ? absOriginOpt->z : 0.0f);
             if (absOriginOpt && isValidWorldCoordinate(*absOriginOpt, true)) {
-                Gui::log("[Bomb] origin from CGameSceneNode m_vecAbsOrigin = %.2f,%.2f,%.2f", absOriginOpt->x, absOriginOpt->y, absOriginOpt->z);
+                BOMB_LOG("[Bomb] origin from CGameSceneNode m_vecAbsOrigin = %.2f,%.2f,%.2f", absOriginOpt->x, absOriginOpt->y, absOriginOpt->z);
                 return absOriginOpt;
             }
             auto originOpt = proc->read<Info::Vec3>(sceneNode + Offsets::CGameSceneNode::m_vecOrigin);
-            Gui::log("[Bomb] sceneNode=0x%llX m_vecOrigin=%.2f,%.2f,%.2f", (unsigned long long)sceneNode,
+            BOMB_LOG("[Bomb] sceneNode=0x%llX m_vecOrigin=%.2f,%.2f,%.2f", (unsigned long long)sceneNode,
                       originOpt ? originOpt->x : 0.0f,
                       originOpt ? originOpt->y : 0.0f,
                       originOpt ? originOpt->z : 0.0f);
             if (originOpt && isValidWorldCoordinate(*originOpt, true)) {
-                Gui::log("[Bomb] origin from CGameSceneNode m_vecOrigin = %.2f,%.2f,%.2f", originOpt->x, originOpt->y, originOpt->z);
+                BOMB_LOG("[Bomb] origin from CGameSceneNode m_vecOrigin = %.2f,%.2f,%.2f", originOpt->x, originOpt->y, originOpt->z);
                 return originOpt;
             }
         }
@@ -134,7 +137,7 @@ Info Finder::read(mem::ProcessMemory* proc) {
         // Try direct C_PlantedC4 'spectate pos' (likely actual bomb world position in CS2)
         auto explodePosOpt = proc->read<Info::Vec3>(base + Offsets::C_PlantedC4::m_vecC4ExplodeSpectatePos);
         if (explodePosOpt && isValidWorldCoordinate(*explodePosOpt, true)) {
-            Gui::log("[Bomb] origin from m_vecC4ExplodeSpectatePos = %.2f,%.2f,%.2f", explodePosOpt->x, explodePosOpt->y, explodePosOpt->z);
+            BOMB_LOG("[Bomb] origin from m_vecC4ExplodeSpectatePos = %.2f,%.2f,%.2f", explodePosOpt->x, explodePosOpt->y, explodePosOpt->z);
             return explodePosOpt;
         }
 
@@ -147,13 +150,13 @@ Info Finder::read(mem::ProcessMemory* proc) {
 
     // try the direct plantedC4 list pointer itself
     auto evaluateCandidate = [&](uintptr_t entity)->std::optional<Info> {
-        Gui::log("[Bomb] evaluating candidate entity=0x%llX", (unsigned long long)entity);
+        BOMB_LOG("[Bomb] evaluating candidate entity=0x%llX", (unsigned long long)entity);
         Info candidate;
         candidate.plantedC4ClassPointer = entity;
 
         auto originC = scanForOrigin(entity);
         if (!originC) {
-            Gui::log("[Bomb] origin scan failed for entity=0x%llX", (unsigned long long)entity);
+            BOMB_LOG("[Bomb] origin scan failed for entity=0x%llX", (unsigned long long)entity);
             return std::nullopt;
         }
 
@@ -206,7 +209,7 @@ Info Finder::read(mem::ProcessMemory* proc) {
             candidate.active = true;
         }
 
-        Gui::log("[Bomb] candidate entity=0x%llX origin=%.2f,%.2f,%.2f ticking=%d activated=%d site=%d beingDefused=%d defused=%d blow=%.3f timerOk=%d active=%d",
+        BOMB_LOG("[Bomb] candidate entity=0x%llX origin=%.2f,%.2f,%.2f ticking=%d activated=%d site=%d beingDefused=%d defused=%d blow=%.3f timerOk=%d active=%d",
                   (unsigned long long)entity,
                   candidate.origin.x, candidate.origin.y, candidate.origin.z,
                   bTickingC.value_or(false), isActivated, nBombSite.value_or(-1), isBeingDefused, isDefused, candidate.blowTime,
@@ -221,7 +224,7 @@ Info Finder::read(mem::ProcessMemory* proc) {
     auto listBeginOpt = proc->read<uintptr_t>(listPtr);
     auto listEndValueOpt = proc->read<uintptr_t>(listPtr + 0x8);
 
-    Gui::log("[Bomb] planted list ptr=0x%llX listBegin=0x%llX listEndValue=0x%llX", (unsigned long long)listPtr,
+    BOMB_LOG("[Bomb] planted list ptr=0x%llX listBegin=0x%llX listEndValue=0x%llX", (unsigned long long)listPtr,
               (unsigned long long)(listBeginOpt ? *listBeginOpt : 0ULL),
               (unsigned long long)(listEndValueOpt ? *listEndValueOpt : 0ULL));
 
@@ -253,7 +256,7 @@ finalize:
     }
 
     if (!info.valid) {
-        Gui::log("[Bomb] no valid planted C4 list yet");
+        BOMB_LOG("[Bomb] no valid planted C4 list yet");
         return info;
     }
 
@@ -268,11 +271,11 @@ finalize:
     }
     info.blowTime = remaining;
 
-    Gui::log("[Bomb] origin read @ x=%.2f y=%.2f z=%.2f", info.origin.x, info.origin.y, info.origin.z);
-    Gui::log("[Bomb] m_flC4Blow rem=%.3f", info.blowTime);
-    Gui::log("[Bomb] active=%d", info.active);
+    BOMB_LOG("[Bomb] origin read @ x=%.2f y=%.2f z=%.2f", info.origin.x, info.origin.y, info.origin.z);
+    BOMB_LOG("[Bomb] m_flC4Blow rem=%.3f", info.blowTime);
+    BOMB_LOG("[Bomb] active=%d", info.active);
 
-    Gui::log("[Bomb] dwPlantedC4 @ 0x%llX points to planted C4 list 0x%llX",
+    BOMB_LOG("[Bomb] dwPlantedC4 @ 0x%llX points to planted C4 list 0x%llX",
               (unsigned long long)addr,
               (unsigned long long)info.plantedC4ClassPointer);
 

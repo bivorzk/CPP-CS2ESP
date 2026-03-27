@@ -105,6 +105,12 @@ static float distance3d(const Vec3& a, const Vec3& b) {
     return sqrtf(dx*dx + dy*dy + dz*dz);
 }
 
+// Stateful velocity approximation for local and target movement
+static Vec3 g_prevLocalPos = {0.0f, 0.0f, 0.0f};
+static uint64_t g_prevLocalTimeMs = 0;
+static uintptr_t g_prevTargetPawn = 0;
+static Vec3 g_prevTargetPos = {0.0f, 0.0f, 0.0f};
+
 static bool isPawnAlive(mem::ProcessMemory* proc, uintptr_t pawn) {
     if (!proc || !pawn) return false;
     auto aliveOpt = proc->read<uint8_t>(pawn + Offsets::m_bPawnIsAlive::STATIC_PTR);
@@ -393,6 +399,10 @@ static void moveMouseForAngleDelta(const Vec3& delta, float sensitivity) {
     if (dx == 0 && fabsf(delta.y) > 0.005f) dx = (delta.y > 0) ? -1 : 1;
     if (dy == 0 && fabsf(delta.x) > 0.005f) dy = (delta.x > 0) ? 1 : -1;
 
+    // Add small timing jitter (1-2 ms) to avoid perfectly deterministic motion patterns.
+    int jitterMs = (rand() % 2) + 1;
+    Sleep(jitterMs);
+
     INPUT input{};
     input.type = INPUT_MOUSE;
     input.mi.dwFlags = MOUSEEVENTF_MOVE;
@@ -526,9 +536,27 @@ void Aim::update(mem::ProcessMemory* proc) {
     const float aimSmoothFactor = Gui::getVisuals().autoAim ? 2.0f : 3.0f; // fast enough to track
 
     Vec3 bestTargetHead {0.0f, 0.0f, 0.0f};
+    Vec3 bestTargetVelocity{0.0f, 0.0f, 0.0f};
     float bestScore = 1e9f;
     bool found = false;
     uintptr_t chosenPawn = 0;
+    Vec3 targetVelocity{0.0f, 0.0f, 0.0f};
+
+    uint64_t nowMs = GetTickCount64();
+    float dt = 0.016f;
+    if (g_prevLocalTimeMs != 0) {
+        dt = (nowMs - g_prevLocalTimeMs) * 0.001f;
+        if (dt < 0.001f) dt = 0.001f;
+    }
+
+    Vec3 localVelocity{0.0f, 0.0f, 0.0f};
+    if (g_prevLocalTimeMs != 0) {
+        localVelocity.x = (eyeOrigin.x - g_prevLocalPos.x) / dt;
+        localVelocity.y = (eyeOrigin.y - g_prevLocalPos.y) / dt;
+        localVelocity.z = (eyeOrigin.z - g_prevLocalPos.z) / dt;
+    }
+    g_prevLocalPos = eyeOrigin;
+    g_prevLocalTimeMs = nowMs;
 
     auto validatePawn = [&](uintptr_t pawn)->bool {
         if (!pawn) return false;
@@ -652,10 +680,15 @@ void Aim::update(mem::ProcessMemory* proc) {
 
         int health = hpOpt ? *hpOpt : 100;
         float score = calcAimbotScore(fovInfo.fovDeg, fovInfo.distance, health);
+        Vec3 candidateVelocity{0.0f, 0.0f, 0.0f};
+        auto velOpt = proc->read<Vec3>(pawn + Offsets::m_vecAbsVelocity::STATIC_PTR);
+        if (velOpt) candidateVelocity = *velOpt;
+
         if (!found || score < bestScore) {
             found = true;
             bestScore = score;
             bestTargetHead = targetPoint;
+            bestTargetVelocity = candidateVelocity;
             chosenPawn = pawn;
         }
     }
@@ -699,6 +732,17 @@ void Aim::update(mem::ProcessMemory* proc) {
             }
         }
     }
+
+    // Estimate target movement velocity (based on previous frame where entity was same target pawn)
+    if (g_targetPawn == g_prevTargetPawn && g_targetPawn != 0) {
+        targetVelocity.x = (bestTargetHead.x - g_prevTargetPos.x) / dt;
+        targetVelocity.y = (bestTargetHead.y - g_prevTargetPos.y) / dt;
+        targetVelocity.z = (bestTargetHead.z - g_prevTargetPos.z) / dt;
+    } else {
+        targetVelocity = {0.0f, 0.0f, 0.0f};
+    }
+    g_prevTargetPawn = g_targetPawn;
+    g_prevTargetPos = bestTargetHead;
 
     if (!g_targetPawn) {
         return;
@@ -744,7 +788,17 @@ void Aim::update(mem::ProcessMemory* proc) {
         }
     }
 
-    Vec3 desiredAng = calcAngle(eyeOrigin, bestTargetHead);
+    // Predict target movement and compensate for own movement.
+    float travelTime = distance3d(eyeOrigin, bestTargetHead) / 12000.0f;
+    if (travelTime > 0.2f) travelTime = 0.2f;
+
+    Vec3 leadTarget{
+        bestTargetHead.x + bestTargetVelocity.x * travelTime - localVelocity.x * travelTime,
+        bestTargetHead.y + bestTargetVelocity.y * travelTime - localVelocity.y * travelTime,
+        bestTargetHead.z + bestTargetVelocity.z * travelTime - localVelocity.z * travelTime
+    };
+
+    Vec3 desiredAng = calcAngle(eyeOrigin, leadTarget);
     Vec3 deltaStep = smoothAim(curAng, desiredAng, 1.0f / aimSmoothFactor);
 
     Gui::log("[DBG] aiming pawn=0x%llX fov=%.2f dist=%.1f curAng=(%.2f,%.2f) desiredAng=(%.2f,%.2f) delta=(%.2f,%.2f)",

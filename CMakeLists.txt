@@ -10,7 +10,9 @@ add_executable(untitled15
     src/overlay/overlay.cpp
     src/aim/aim.cpp
 
-    # GUI — one file per responsibility
+    # GUI — core + tabs
+    src/gui/gui.cpp
+    src/gui/gui_draw.cpp
     src/gui/gui_tab_config.cpp
     src/gui/gui_tab_visuals.cpp
     src/gui/gui_tab_memory.cpp

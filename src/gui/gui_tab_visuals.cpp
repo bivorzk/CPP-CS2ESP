@@ -1,6 +1,7 @@
 #include "gui_tabs.hpp"
 #include "gui_draw.hpp"
 #include <cstdio>
+#include <cstdlib>
 
 namespace Gui {
 

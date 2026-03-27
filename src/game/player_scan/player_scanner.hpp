@@ -5,6 +5,7 @@
 
 #include "mem.hpp"
 #include "offsets.hpp"
+#include "bomb_found.hpp"
 
 namespace PlayerScanner {
 
@@ -12,6 +13,6 @@ namespace PlayerScanner {
                                  uintptr_t address,
                                  size_t maxLen = 64);
 
-    bool scanPlayers(mem::ProcessMemory* proc);
+    bool scanPlayers(mem::ProcessMemory* proc, const Bomb::Info* bombInfo = nullptr);
 
 } // namespace PlayerScanner

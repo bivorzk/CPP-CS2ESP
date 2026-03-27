@@ -14,9 +14,10 @@ namespace PlayerScanner {
 static uint64_t s_scanFrameCount = 0;
 static uint64_t s_scanLastFpsMs = 0;
 static uint64_t s_scanTotalMs = 0;
-static bool     s_scanDebug = true; // toggle for console profiling
+static bool     s_scanDebug = false; // toggle for console profiling
+#define DBG_LOG(...) do { if (s_scanDebug) Gui::log(__VA_ARGS__); } while(0)
 
-bool scanPlayers(mem::ProcessMemory* proc) {
+bool scanPlayers(mem::ProcessMemory* proc, const Bomb::Info* bombInfo) {
     static std::vector<PlayerRecord> cachedPlayers;
 
     if (!proc) {
@@ -70,7 +71,7 @@ bool scanPlayers(mem::ProcessMemory* proc) {
     }
 
     if (!vmBase) {
-        Gui::log("[DBG] viewMatrix base module not found (client/engine2/engine)");
+        DBG_LOG("[DBG] viewMatrix base module not found (client/engine2/engine)");
     }
 
     auto vmOpt = vmBase ? proc->read<std::array<float,16>>(vmBase + Offsets::dwViewMatrix::STATIC_PTR) : std::optional<std::array<float,16>>{};
@@ -90,7 +91,7 @@ bool scanPlayers(mem::ProcessMemory* proc) {
 
     RECT gameRect;
     if (!getCS2WindowRect(gameRect)) {
-        Gui::log("[DBG] CS2 window not found, skipping scan");
+        DBG_LOG("[DBG] CS2 window not found, skipping scan");
         return false;
     }
     int gameW = gameRect.right - gameRect.left;
@@ -98,9 +99,10 @@ bool scanPlayers(mem::ProcessMemory* proc) {
 
     // Bomb direction filtering: only show friendly boxes when local reticle is roughly near bomb.
     bool localLookingAtBomb = false;
-    Bomb::Info bombInfoNow = Bomb::Finder::read(proc);
-    if (haveMatrix && bombInfoNow.valid && bombInfoNow.active) {
-        Vec3 bombWorld{bombInfoNow.origin.x, bombInfoNow.origin.y, bombInfoNow.origin.z};
+    Bomb::Info localBombInfo = bombInfo ? *bombInfo : Bomb::Finder::read(proc);
+    const Bomb::Info* effectiveBombInfo = bombInfo ? bombInfo : &localBombInfo;
+    if (haveMatrix && effectiveBombInfo->valid && effectiveBombInfo->active) {
+        Vec3 bombWorld{effectiveBombInfo->origin.x, effectiveBombInfo->origin.y, effectiveBombInfo->origin.z};
         POINT bombPt;
         if (worldToScreen(bombWorld, viewMatrix, gameW, gameH, bombPt)) {
             int centerX = gameW / 2;
@@ -109,7 +111,8 @@ bool scanPlayers(mem::ProcessMemory* proc) {
             int dy = abs(bombPt.y - centerY);
             int threshold = (std::min)(gameW, gameH) / 4;
             localLookingAtBomb = (dx <= threshold && dy <= threshold);
-            Gui::log("[DBG] bomb screen delta dx=%d dy=%d threshold=%d localLookingAtBomb=%d", dx, dy, threshold, (int)localLookingAtBomb);
+            if (s_scanDebug)
+                DBG_LOG("[DBG] bomb screen delta dx=%d dy=%d threshold=%d localLookingAtBomb=%d", dx, dy, threshold, (int)localLookingAtBomb);
         }
     }
 
@@ -165,7 +168,7 @@ bool scanPlayers(mem::ProcessMemory* proc) {
 
         auto healthOpt = proc->read<uint32_t>(pawn + Offsets::m_iHealth::STATIC_PTR);
         if (!healthOpt) {
-            Gui::log("[DBG] pawn %llX health read failed", (unsigned long long)pawn);
+            DBG_LOG("[DBG] pawn %llX health read failed", (unsigned long long)pawn);
             continue;
         }
         uint32_t health = *healthOpt;
@@ -227,11 +230,11 @@ bool scanPlayers(mem::ProcessMemory* proc) {
                         info.isBomb = false;
                         pawnRects.push_back(info);
                     } else {
-                        Gui::log("[DBG] w2s failed for pawn (footOk=%d headOk=%d)", footOk, headOk);
+                        DBG_LOG("[DBG] w2s failed for pawn (footOk=%d headOk=%d)", footOk, headOk);
                     }
                 }
             } else {
-                Gui::log("[DBG] origin read failed for pawn %llX", (unsigned long long)pawn);
+                DBG_LOG("[DBG] origin read failed for pawn %llX", (unsigned long long)pawn);
             }
         }
 
@@ -243,17 +246,17 @@ bool scanPlayers(mem::ProcessMemory* proc) {
 
     // Add bomb marker to overlay if bomb is planted / actively ticking (not dropped, not a half-read coin).
     static std::optional<Vec3> g_lastBombWorld;
-    Bomb::Info bombInfo = Bomb::Finder::read(proc);
+    const Bomb::Info* bombInfoPtr = effectiveBombInfo;
 
-    if (!bombInfo.active) {
+    if (!bombInfoPtr->active) {
         g_lastBombWorld.reset();
     }
 
-    if (!bombInfo.active || !bombInfo.valid || !haveMatrix) {
+    if (!bombInfoPtr->active || !bombInfoPtr->valid || !haveMatrix) {
         // no active planted bomb to show
     } else {
         POINT bombPt;
-        Vec3 bombWorld { bombInfo.origin.x, bombInfo.origin.y, bombInfo.origin.z };
+        Vec3 bombWorld { bombInfoPtr->origin.x, bombInfoPtr->origin.y, bombInfoPtr->origin.z };
 
         auto isBogusBombOrigin = [&](const Vec3 &v) {
             return fabs(v.x) < 1.0f && fabs(v.y) < 1.0f && fabs(v.z) < 1.0f;
@@ -308,13 +311,13 @@ bool scanPlayers(mem::ProcessMemory* proc) {
             bombRect.drawBox = true;
             bombRect.teamA = false;
             bombRect.isBomb = true;
-            bombRect.blowTime = bombInfo.blowTime;
+            bombRect.blowTime = bombInfoPtr->blowTime;
             pawnRects.push_back(bombRect);
 
             Gui::log("[Bomb] worldToScreen succeeded at %d,%d", bombPt.x, bombPt.y);
         } else {
             Gui::log("[Bomb] worldToScreen failed for bomb origin (raw: %.2f,%.2f,%.2f)",
-                    bombInfo.origin.x, bombInfo.origin.y, bombInfo.origin.z);
+                    bombInfoPtr->origin.x, bombInfoPtr->origin.y, bombInfoPtr->origin.z);
         }
     }
 

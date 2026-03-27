@@ -73,12 +73,12 @@ static void runTick() {
     if (running) {
         Overlay::show();
 
-        bool changed = PlayerScanner::scanPlayers(g_proc);
+        Bomb::Info bombInfo = Bomb::Finder::read(g_proc);
+        bool changed = PlayerScanner::scanPlayers(g_proc, &bombInfo);
         if (changed) {
             // silent (no frequent log) for speed
         }
 
-        Bomb::Info bombInfo = Bomb::Finder::read(g_proc);
         uint64_t nowMs = GetTickCount64();
 
         if (bombInfo.valid && bombInfo.blowTime > 0.0f) {
