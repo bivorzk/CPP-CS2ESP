@@ -13,10 +13,11 @@ HWND      s_tabBtns[TAB_COUNT] = {};
 int       s_activeTab = 0;
 
 Config      s_config  = { "cs2.exe", 8 };   // reduced poll interval for near-realtime updates
-VisualConfig s_visuals = { 300, 200, 3, 255, RGB(255,255,255), 0, 0, false, false, 0, false, 0 };
+VisualConfig s_visuals = { 300, 200, 3, 255, RGB(255,255,255), 0, 0,
+                           false, false, false, 0, false, 0, false };
 
 const char* TAB_NAMES[TAB_COUNT] = {
-    "Config", "Visuals", "Memory", "Hotkeys", "Debug", "About", "Players"
+    "Config", "Combat", "Movement", "Memory", "Hotkeys", "Debug", "About", "Players"
 };
 
 HBRUSH s_brDark  = nullptr;
@@ -158,12 +159,17 @@ void paintButton(LPDRAWITEMSTRUCT di) {
     bool dn  = (di->itemState & ODS_SELECTED) != 0;
     bool dis = (di->itemState & ODS_DISABLED)  != 0;
 
-    fillRC(dc, rc, dn ? C_BG_PRESS : C_BG_CTRL);
-    outlineRC(dc, rc, dn ? C_ACCENT : C_BORDER);
-    if (dn) {
-        RECT glow = { rc.left+1, rc.top+1, rc.right-1, rc.top+2 };
-        fillRC(dc, glow, C_ACCENT2);
-    }
+    // Modern rounded button style
+    HBRUSH bg = CreateSolidBrush(dn ? C_BG_PRESS : C_BG_CTRL);
+    HPEN   border = CreatePen(PS_SOLID, 1, dn ? C_ACCENT : C_BORDER);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(dc, bg);
+    HPEN oldPen = (HPEN)SelectObject(dc, border);
+    RoundRect(dc, rc.left, rc.top, rc.right, rc.bottom, 12, 12);
+    SelectObject(dc, oldPen);
+    SelectObject(dc, oldBrush);
+    DeleteObject(border);
+    DeleteObject(bg);
+
     char txt[80]{}; GetWindowTextA(di->hwndItem, txt, 80);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, dis ? C_TEXT_SEC : (dn ? C_ACCENT : C_TEXT_PRI));
@@ -177,18 +183,19 @@ void paintTabBtn(LPDRAWITEMSTRUCT di, int idx) {
     RECT rc   = di->rcItem;
     bool act  = (idx == s_activeTab);
 
-    fillRC(dc, rc, act ? C_BG_PANEL : C_BG_DARK);
+    // Tab button shadows + modern material style
+    COLORREF bgColor   = act ? RGB( 34,  42,  56) : C_BG_DARK;
+    COLORREF txtColor  = act ? C_ACCENT : C_TEXT_SEC;
+    fillRC(dc, rc, bgColor);
     if (act) {
-        RECT bar = { rc.left, rc.top+3, rc.left+3, rc.bottom-3 };
+        RECT bar = { rc.left+8, rc.bottom-3, rc.right-8, rc.bottom-1 };
         fillRC(dc, bar, C_ACCENT);
     }
-    hLine(dc, rc.left, rc.right, rc.bottom-1, C_BORDER);
-    if (!act) vLine(dc, rc.right-1, rc.top, rc.bottom, C_BORDER);
 
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, act ? C_ACCENT : C_TEXT_SEC);
+    SetTextColor(dc, txtColor);
     HFONT of = (HFONT)SelectObject(dc, act ? s_fBold : s_fUI);
-    RECT tr  = { rc.left+18, rc.top, rc.right-4, rc.bottom };
+    RECT tr  = { rc.left+18, rc.top, rc.right-6, rc.bottom };
     DrawTextA(dc, TAB_NAMES[idx], -1, &tr, DT_LEFT|DT_VCENTER|DT_SINGLELINE);
     SelectObject(dc, of);
 }

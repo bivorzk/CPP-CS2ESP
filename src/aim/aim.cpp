@@ -419,12 +419,11 @@ void Aim::update(mem::ProcessMemory* proc) {
     bool autoAim = Gui::getVisuals().autoAim;
     bool altAutoFire = Gui::getVisuals().altAutoFire;
     bool autoFire = autoAim || (altDown && altAutoFire); // auto-fire: autoAim always, ALT only if altAutoFire enabled
-    bool aimHold = true; // if true, ALT or auto-aim required to aim mode
+
+    // ALT presence should enable targeting mode; fire only when autoFire triggers.
+    bool shouldAim = autoAim || altDown;
     bool leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    bool altHold = altDown;
-    bool keyHeld = altHold;
-    // left click alone should NOT activate aimbot (only normal manual fire)
-    bool shouldAct = (aimHold ? keyHeld : true) && (autoAim || altHold);
+    bool shouldAct = shouldAim;
 
     if (!cs2Foreground || !shouldAct) return;
 
@@ -432,7 +431,7 @@ void Aim::update(mem::ProcessMemory* proc) {
     bool fireOnly = false; // in Rust this is AimMode::FireOnly
     if (fireOnly && !isFiring) return;
 
-    Gui::log("[DBG] Aim::update autoAim=%d altDown=%d keyHeld=%d shouldAct=%d isFiring=%d", autoAim, altDown, keyHeld, shouldAct, isFiring);
+    Gui::log("[DBG] Aim::update autoAim=%d altDown=%d altAutoFire=%d autoFire=%d shouldAim=%d shouldAct=%d isFiring=%d", autoAim, altDown, altAutoFire, autoFire, shouldAim, shouldAct, isFiring);
 
     // On pass, final aim & trigger behavior continues.
 
@@ -554,7 +553,16 @@ void Aim::update(mem::ProcessMemory* proc) {
         localVelocity.x = (eyeOrigin.x - g_prevLocalPos.x) / dt;
         localVelocity.y = (eyeOrigin.y - g_prevLocalPos.y) / dt;
         localVelocity.z = (eyeOrigin.z - g_prevLocalPos.z) / dt;
+
+        if (!std::isfinite(localVelocity.x) || !std::isfinite(localVelocity.y) || !std::isfinite(localVelocity.z)) {
+            localVelocity = {0.0f, 0.0f, 0.0f};
+        }
     }
+    if (!std::isfinite(eyeOrigin.x) || !std::isfinite(eyeOrigin.y) || !std::isfinite(eyeOrigin.z)) {
+        Gui::log("[DBG] aim: eyeOrigin invalid, skipping");
+        return;
+    }
+
     g_prevLocalPos = eyeOrigin;
     g_prevLocalTimeMs = nowMs;
 
@@ -682,7 +690,12 @@ void Aim::update(mem::ProcessMemory* proc) {
         float score = calcAimbotScore(fovInfo.fovDeg, fovInfo.distance, health);
         Vec3 candidateVelocity{0.0f, 0.0f, 0.0f};
         auto velOpt = proc->read<Vec3>(pawn + Offsets::m_vecAbsVelocity::STATIC_PTR);
-        if (velOpt) candidateVelocity = *velOpt;
+        if (velOpt) {
+            candidateVelocity = *velOpt;
+            if (!std::isfinite(candidateVelocity.x) || !std::isfinite(candidateVelocity.y) || !std::isfinite(candidateVelocity.z)) {
+                candidateVelocity = {0.0f, 0.0f, 0.0f};
+            }
+        }
 
         if (!found || score < bestScore) {
             found = true;
@@ -792,11 +805,20 @@ void Aim::update(mem::ProcessMemory* proc) {
     float travelTime = distance3d(eyeOrigin, bestTargetHead) / 12000.0f;
     if (travelTime > 0.2f) travelTime = 0.2f;
 
+    bestTargetVelocity.x = std::isfinite(bestTargetVelocity.x) ? bestTargetVelocity.x : 0.0f;
+    bestTargetVelocity.y = std::isfinite(bestTargetVelocity.y) ? bestTargetVelocity.y : 0.0f;
+    bestTargetVelocity.z = std::isfinite(bestTargetVelocity.z) ? bestTargetVelocity.z : 0.0f;
+
     Vec3 leadTarget{
         bestTargetHead.x + bestTargetVelocity.x * travelTime - localVelocity.x * travelTime,
         bestTargetHead.y + bestTargetVelocity.y * travelTime - localVelocity.y * travelTime,
         bestTargetHead.z + bestTargetVelocity.z * travelTime - localVelocity.z * travelTime
     };
+
+    if (!std::isfinite(leadTarget.x) || !std::isfinite(leadTarget.y) || !std::isfinite(leadTarget.z)) {
+        Gui::log("[DBG] aim: lead target invalid (%.3f,%.3f,%.3f), using bestTargetHead", leadTarget.x, leadTarget.y, leadTarget.z);
+        leadTarget = bestTargetHead;
+    }
 
     Vec3 desiredAng = calcAngle(eyeOrigin, leadTarget);
     Vec3 deltaStep = smoothAim(curAng, desiredAng, 1.0f / aimSmoothFactor);

@@ -42,6 +42,8 @@ namespace Gui {
 
         bool     strictVisibility;  // enforce strict locally-visible criteria
         int      visCooldownFrames; // number of frames to confirm new target / keep old after lost
+
+        bool     autoBhop;          // enable bunnyhop automation
     };
 
     // -- Lifecycle -------------------------------------------

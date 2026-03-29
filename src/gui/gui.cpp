@@ -9,6 +9,12 @@
 namespace Gui {
 
 // ============================================================
+//  Scroll state (Visuals)
+// ============================================================
+HWND s_visualsContent = nullptr;
+int   s_visualsContentHeight = 0;
+
+// ============================================================
 //  Tab selection
 // ============================================================
 static void selectTab(int idx) {
@@ -28,7 +34,9 @@ static LRESULT CALLBACK GuiProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
 
         case WM_ERASEBKGND: {
             RECT rc; GetClientRect(hw, &rc);
-            FillRect((HDC)wp, &rc, s_brDark);
+            HBRUSH gradient = CreateSolidBrush(C_BG_PANEL);
+            FillRect((HDC)wp, &rc, gradient);
+            DeleteObject(gradient);
             return 1;
         }
 
@@ -76,7 +84,8 @@ static LRESULT CALLBACK GuiProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
             // Route to the owning tab's handler
             // Each handler returns true if it consumed the message
             if (handleConfig (wp)) { log("[Config] Applied — process: %s  poll: %lums", s_config.targetProcess, s_config.pollMs); break; }
-            if (handleVisuals(wp)) { log("[Visuals] %dx%d  border:%d  opacity:%d  RGB(%d,%d,%d)", s_visuals.width, s_visuals.height, s_visuals.borderPx, s_visuals.opacity, GetRValue(s_visuals.color), GetGValue(s_visuals.color), GetBValue(s_visuals.color)); break; }
+            if (handleCombat(wp)) { log("[Combat] Settings updated"); break; }
+            if (handleMovement(wp)) { log("[Movement] Settings updated"); break; }
             if (handleMemory (wp)) { log("[Memory] Write not yet wired — fill game logic in main.cpp."); break; }
             if (handlePlayers(wp)) { log("[Players] Player list controls handled."); break; }
             handleHotkeys(wp);
@@ -117,6 +126,10 @@ bool init(HINSTANCE hInst) {
         nullptr, nullptr, hInst, nullptr);
     if (!s_hwnd) return false;
 
+    // Apply a thinner, modern window frame and title styling
+    SetWindowTheme(s_hwnd, L"Explorer", nullptr);
+    SetWindowLong(s_hwnd, GWL_STYLE, GetWindowLong(s_hwnd, GWL_STYLE) & ~WS_THICKFRAME);
+
     // Dark title bar (Windows 10 v1903+)
     BOOL dark = TRUE;
     DwmSetWindowAttribute(s_hwnd, 20, &dark, sizeof(dark));
@@ -144,20 +157,23 @@ bool init(HINSTANCE hInst) {
     int cw = WIN_W - cx - 16;
     int ch = WIN_H - 42;
     for (int i = 0; i < TAB_COUNT; ++i) {
+        int style = WS_CHILD | (i==0 ? WS_VISIBLE : 0) | WS_CLIPCHILDREN;
+        if (i == 1) style |= WS_VSCROLL;
         s_panels[i] = CreateWindowA(PCLS, "",
-            WS_CHILD | (i==0 ? WS_VISIBLE : 0),
+            style,
             cx, 2, cw, ch,
             s_hwnd, nullptr, hInst, nullptr);
     }
 
     // Build each tab's controls
-    buildConfig  (s_panels[0]);
-    buildVisuals (s_panels[1]);
-    buildMemory  (s_panels[2]);
-    buildHotkeys (s_panels[3]);
-    buildDebug   (s_panels[4]);
-    buildAbout   (s_panels[5]);
-    buildPlayers (s_panels[6]);
+    buildConfig   (s_panels[0]);
+    buildCombat   (s_panels[1]);
+    buildMovement (s_panels[2]);
+    buildMemory   (s_panels[3]);
+    buildHotkeys  (s_panels[4]);
+    buildDebug    (s_panels[5]);
+    buildAbout    (s_panels[6]);
+    buildPlayers  (s_panels[7]);
 
     return true;
 }

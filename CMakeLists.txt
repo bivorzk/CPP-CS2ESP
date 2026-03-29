@@ -23,6 +23,7 @@ add_executable(untitled15
     src/game/player_scan/player_scanner.cpp
     src/game/player_scan/player_scanner_helpers.cpp
     src/game/bomb/bomb_found.cpp
+    src/game/bhop/bhop.cpp
 )
 
 

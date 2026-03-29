@@ -16,6 +16,7 @@
 #include "player_scanner.hpp"
 #include "bomb_found.hpp"
 #include "aim.hpp"
+#include "game/bhop/bhop.hpp"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -93,6 +94,7 @@ static void runTick() {
         }
 
         Aim::update(g_proc);
+        BHop::update(g_proc);
     } else {
         Overlay::hide();
     }

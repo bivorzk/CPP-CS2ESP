@@ -10,15 +10,15 @@ namespace Gui {
 // ============================================================
 //  Colour palette
 // ============================================================
-static constexpr COLORREF C_BG_DARK   = RGB( 10,  10,  14);
-static constexpr COLORREF C_BG_PANEL  = RGB( 16,  16,  22);
-static constexpr COLORREF C_BG_CTRL   = RGB( 24,  24,  34);
-static constexpr COLORREF C_BG_PRESS  = RGB(  0,  65,  82);
-static constexpr COLORREF C_ACCENT    = RGB(  0, 210, 255);
-static constexpr COLORREF C_ACCENT2   = RGB(  0,  80, 100);
-static constexpr COLORREF C_TEXT_PRI  = RGB(220, 220, 238);
-static constexpr COLORREF C_TEXT_SEC  = RGB(110, 110, 140);
-static constexpr COLORREF C_BORDER    = RGB( 36,  36,  52);
+static constexpr COLORREF C_BG_DARK   = RGB( 14,  17,  24);
+static constexpr COLORREF C_BG_PANEL  = RGB( 24,  28,  36);
+static constexpr COLORREF C_BG_CTRL   = RGB( 34,  38,  48);
+static constexpr COLORREF C_BG_PRESS  = RGB(  0, 112, 184);
+static constexpr COLORREF C_ACCENT    = RGB(  90, 200, 255);
+static constexpr COLORREF C_ACCENT2   = RGB(  36,  76, 108);
+static constexpr COLORREF C_TEXT_PRI  = RGB(235, 239, 247);
+static constexpr COLORREF C_TEXT_SEC  = RGB(152, 163, 176);
+static constexpr COLORREF C_BORDER    = RGB( 56,  68,  84);
 
 // ============================================================
 //  GDI resource lifecycle
