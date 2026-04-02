@@ -24,22 +24,22 @@ namespace Offsets {
     inline constexpr const char* MODULE = "client.dll";
 
     namespace dwEntityList {
-        inline constexpr uintptr_t STATIC_PTR = 0x24B0258;   // entity list pointer
+        inline constexpr uintptr_t STATIC_PTR = 0x24B3268;   // entity list pointer
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
     namespace dwLocalPlayerController {
-        inline constexpr std::ptrdiff_t STATIC_PTR = 0x22F5028; // local player controller offset
+        inline constexpr std::ptrdiff_t STATIC_PTR = 0x22F8028; // local player controller offset
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
     namespace dwLocalPlayerPawn {
-        inline constexpr std::ptrdiff_t STATIC_PTR = 0x206A9E0; // local player pawn offset
+        inline constexpr std::ptrdiff_t STATIC_PTR = 0x206D9E0; // local player pawn offset
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
     namespace dwViewMatrix {
-        inline constexpr uintptr_t STATIC_PTR = 0x2310F10;  // view matrix pointer (example)
+        inline constexpr uintptr_t STATIC_PTR = 0x2313F10;  // view matrix pointer (example)
         inline const std::vector<uintptr_t> CHAIN = { };
     }
 
