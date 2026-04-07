@@ -125,24 +125,31 @@ static constexpr float TRIGGER_FOV = 1.5f;
 static constexpr float BONE_Z_SANITY = 150.0f;
 static constexpr float SWITCH_HYSTERESIS = 0.85f;
 
-static std::vector<int> boneCandidatesFor(int aimPart) {
-    // BoneID: Head=6, Neck=5, Spine=4, Spine1=2, Pelvis=0,
-    //   LeftShoulder=8, LeftArm=9, LeftHand=11,
-    //   RightShoulder=13, RightArm=14, RightHand=16,
-    //   LeftHip=22, LeftKnee=23, LeftFoot=24,
-    //   RightHip=25, RightKnee=26, RightFoot=27
-    switch (aimPart) {
-        case 0: // head
-            return { 6, 5 };
-        case 1: // body
-            return { 4, 2, 0, 5 };
-        case 2: // arms
-            return { 8, 9, 11, 13, 14, 16 };
-        case 3: // legs
-            return { 22, 23, 24, 25, 26, 27 };
-        default:
-            return { 6, 5, 4, 0 };
+static const int s_boneCategoryGroups[7][6] = {
+    { 6, -1, -1, -1, -1, -1 }, // Head
+    { 5, -1, -1, -1, -1, -1 }, // Neck
+    { 4, -1, -1, -1, -1, -1 }, // Chest
+    { 2, -1, -1, -1, -1, -1 }, // Stomach
+    { 0, -1, -1, -1, -1, -1 }, // Pelvis
+    { 8, 9, 11, 13, 14, 16 },  // Arms
+    { 22, 23, 24, 25, 26, 27 } // Legs
+};
+static const int s_boneCategoryCounts[7] = { 1, 1, 1, 1, 1, 6, 6 };
+
+static std::vector<int> boneCandidatesFor(const Gui::VisualConfig& vis) {
+    std::vector<int> bones;
+    bones.reserve(16);
+    for (int categoryIndex : vis.bonePriorityOrder) {
+        if (categoryIndex < 0 || categoryIndex >= 7) continue;
+        if (!vis.bonePriorityEnabled[categoryIndex]) continue;
+        int count = s_boneCategoryCounts[categoryIndex];
+        for (int j = 0; j < count; ++j) {
+            int boneId = s_boneCategoryGroups[categoryIndex][j];
+            if (boneId < 0) break;
+            bones.push_back(boneId);
+        }
     }
+    return bones;
 }
 
 static bool isPawnVisible(mem::ProcessMemory* proc, uintptr_t pawn, int localPlayerId, bool strictMaskOnly = false) {
@@ -353,8 +360,8 @@ static bool getRawBoneWorldPosition(mem::ProcessMemory* proc, uintptr_t pawn, in
     return true;
 }
 
-static bool getBoneWorldPosition(mem::ProcessMemory* proc, uintptr_t pawn, const Vec3& origin, int aimPart, Vec3& out) {
-    auto candidates = boneCandidatesFor(aimPart);
+static bool getBoneWorldPosition(mem::ProcessMemory* proc, uintptr_t pawn, const Vec3& origin, const Gui::VisualConfig& vis, Vec3& out) {
+    auto candidates = boneCandidatesFor(vis);
 
     for (int boneIndex : candidates) {
         Vec3 candidatePos;
@@ -371,7 +378,7 @@ static bool getBoneWorldPosition(mem::ProcessMemory* proc, uintptr_t pawn, const
         return true;
     }
 
-    // fallback options
+    // fallback to the head bone if no priority bone was valid.
     if (getRawBoneWorldPosition(proc, pawn, 6, out)) {
         float boneDist = distance3d(origin, out);
         if (boneDist <= BONE_Z_SANITY) {
@@ -416,22 +423,27 @@ void Aim::update(mem::ProcessMemory* proc) {
 
     bool cs2Foreground = isCs2ForegroundWindow();
     bool altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-    bool autoAim = Gui::getVisuals().autoAim;
-    bool altAutoFire = Gui::getVisuals().altAutoFire;
-    bool autoFire = autoAim || (altDown && altAutoFire); // auto-fire: autoAim always, ALT only if altAutoFire enabled
+    Gui::VisualConfig visCfg = Gui::getVisuals();
+    if (!visCfg.aimbotEnabled || visCfg.aimbotMode == 0) return;
 
-    // ALT presence should enable targeting mode; fire only when autoFire triggers.
-    bool shouldAim = autoAim || altDown;
     bool leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    bool shouldAct = shouldAim;
+    bool shouldAim = (visCfg.aimbotMode == 3) ? false : true;
+    bool shouldAct = shouldAim || visCfg.autoShoot || altDown;
+
+    uint64_t nowMs = GetTickCount64();
+    static uint64_t g_lastAimbotMs = 0;
+    if (visCfg.aimbotUpdateMs > 0 && nowMs < g_lastAimbotMs + static_cast<uint64_t>(visCfg.aimbotUpdateMs)) {
+        return;
+    }
+    g_lastAimbotMs = nowMs;
 
     if (!cs2Foreground || !shouldAct) return;
 
     bool isFiring = false; // placeholder; can implement weapon-shot query after entityList is known.
-    bool fireOnly = false; // in Rust this is AimMode::FireOnly
-    if (fireOnly && !isFiring) return;
+    bool autoFire = visCfg.autoShoot;
+    bool triggerOnly = (visCfg.aimbotMode == 3);
 
-    Gui::log("[DBG] Aim::update autoAim=%d altDown=%d altAutoFire=%d autoFire=%d shouldAim=%d shouldAct=%d isFiring=%d", autoAim, altDown, altAutoFire, autoFire, shouldAim, shouldAct, isFiring);
+    Gui::log("[DBG] Aim::update mode=%d enabled=%d autoShoot=%d triggerOnly=%d altDown=%d", visCfg.aimbotMode, visCfg.aimbotEnabled, visCfg.autoShoot, triggerOnly, altDown);
 
     // On pass, final aim & trigger behavior continues.
 
@@ -526,13 +538,12 @@ void Aim::update(mem::ProcessMemory* proc) {
         haveMatrix = (gameW > 0 && gameH > 0);
     }
 
-    const auto& visCfg = Gui::getVisuals();
-    const float maxRange = 1700.0f;
-    const float maxFov = 180.0f; // debug: wide open for testing
-    const float strictMaxRange = 1500.0f;
+    const float maxRange = static_cast<float>(visCfg.maxDistance);
+    const float maxFov = static_cast<float>(visCfg.aimMaxFov);
+    const float strictMaxRange = std::min(maxRange, 1500.0f);
     const float strictMaxYaw = 70.0f;
     const float strictMaxPitch = 70.0f;
-    const float aimSmoothFactor = Gui::getVisuals().autoAim ? 2.0f : 3.0f; // fast enough to track
+    const float aimSmoothFactor = std::max(0.1f, visCfg.aimSmoothing);
 
     Vec3 bestTargetHead {0.0f, 0.0f, 0.0f};
     Vec3 bestTargetVelocity{0.0f, 0.0f, 0.0f};
@@ -541,7 +552,6 @@ void Aim::update(mem::ProcessMemory* proc) {
     uintptr_t chosenPawn = 0;
     Vec3 targetVelocity{0.0f, 0.0f, 0.0f};
 
-    uint64_t nowMs = GetTickCount64();
     float dt = 0.016f;
     if (g_prevLocalTimeMs != 0) {
         dt = (nowMs - g_prevLocalTimeMs) * 0.001f;
@@ -588,7 +598,7 @@ void Aim::update(mem::ProcessMemory* proc) {
         if (!visible) return false;
 
         Vec3 target;
-        if (!getBoneWorldPosition(proc, pawn, *originOpt, visCfg.aimPart, target)) {
+        if (!getBoneWorldPosition(proc, pawn, *originOpt, visCfg, target)) {
             target = selectAimPoint(*originOpt, *viewOffsetOpt, visCfg.aimPart);
         }
 
@@ -603,16 +613,18 @@ void Aim::update(mem::ProcessMemory* proc) {
 
     // Candidate target stickiness & delayed release (optional): set to 0 for immediate reaction.
     static uintptr_t candidatePawn = 0;
-    static int candidateFrames = 0;
+    static uint64_t candidateStartMs = 0;
+    static uint64_t lostStartMs = 0;
     static int lostFrames = 0;
-    int framesRequired = std::max(0, Gui::getVisuals().visCooldownFrames);
+    nowMs = GetTickCount64();
+    int switchDelayMs = std::max(0, visCfg.targetSwitchMs);
 
     if (g_targetPawn && isPawnVisible(proc, g_targetPawn, localPlayerId, visCfg.strictVisibility)) {
         Vec3 targetPoint;
         auto originOpt = proc->read<Vec3>(g_targetPawn + Offsets::m_vecOrigin::STATIC_PTR);
         auto viewOffsetOpt = proc->read<Vec3>(g_targetPawn + Offsets::m_vecViewOffset::STATIC_PTR);
         if (originOpt && viewOffsetOpt) {
-            if (!getBoneWorldPosition(proc, g_targetPawn, *originOpt, visCfg.aimPart, targetPoint)) {
+            if (!getBoneWorldPosition(proc, g_targetPawn, *originOpt, visCfg, targetPoint)) {
                 targetPoint = selectAimPoint(*originOpt, *viewOffsetOpt, visCfg.aimPart);
             }
         }
@@ -659,7 +671,8 @@ void Aim::update(mem::ProcessMemory* proc) {
 
         Gui::log("[DBG] aim[%d] pawn=0x%llX team=%d(local=%d) hp=%d", i, (unsigned long long)pawn, readTeam, localTeam, readHp);
 
-        if (!teamOpt || *teamOpt == localTeam) { Gui::log("[DBG]  -> skip: same team"); continue; }
+        if (!teamOpt) { Gui::log("[DBG]  -> skip: missing team"); continue; }
+        if (*teamOpt == localTeam && visCfg.ignoreTeammates) { Gui::log("[DBG]  -> skip: same team"); continue; }
         if (!hpOpt || *hpOpt <= 0) { Gui::log("[DBG]  -> skip: dead hp=%d", readHp); continue; }
 
         auto originOpt = proc->read<Vec3>(pawn + Offsets::m_vecOrigin::STATIC_PTR);
@@ -669,7 +682,7 @@ void Aim::update(mem::ProcessMemory* proc) {
         Gui::log("[DBG]  -> origin=(%.1f,%.1f,%.1f)", originOpt->x, originOpt->y, originOpt->z);
 
         Vec3 targetPoint;
-        if (!getBoneWorldPosition(proc, pawn, *originOpt, visCfg.aimPart, targetPoint)) {
+        if (!getBoneWorldPosition(proc, pawn, *originOpt, visCfg, targetPoint)) {
             targetPoint = selectAimPoint(*originOpt, *viewOffsetOptEnemy, visCfg.aimPart);
             Gui::log("[DBG]  -> bone failed, using fallback");
         } else {
@@ -679,6 +692,12 @@ void Aim::update(mem::ProcessMemory* proc) {
         FovResult fovInfo = GetTargetFOVAndDistance(eyeOrigin, angleToDirection(curAng), targetPoint);
         if (fovInfo.distance <= 0.0f || fovInfo.distance > maxRange) continue;
 
+        bool visible = isPawnVisible(proc, pawn, localPlayerId, visCfg.visibilityRayTrace);
+        if (visCfg.visibleOnly && !visible) {
+            Gui::log("[DBG] candidate skip pawn=0x%llX not visible", (unsigned long long)pawn);
+            continue;
+        }
+
         // dynamic FOV scaling by distance (reference from PureLiquid CS2)
         float dynamicFov = maxFov / (fovInfo.distance / 100.0f + 1.0f);
         if (fovInfo.fovDeg > dynamicFov) {
@@ -687,7 +706,18 @@ void Aim::update(mem::ProcessMemory* proc) {
         }
 
         int health = hpOpt ? *hpOpt : 100;
-        float score = calcAimbotScore(fovInfo.fovDeg, fovInfo.distance, health);
+        float score = 0.0f;
+        switch (visCfg.targetPriority) {
+            case 1: score = fovInfo.distance + fovInfo.fovDeg * 0.03f; break;
+            case 2: score = static_cast<float>(health) + fovInfo.fovDeg * 0.15f; break;
+            case 3: score = fovInfo.fovDeg + fovInfo.distance * 0.01f; break;
+            case 4: score = fovInfo.fovDeg; break;
+            case 0:
+            default:
+                score = fovInfo.fovDeg + fovInfo.distance * 0.015f;
+                break;
+        }
+        if (!visible) score += 1000.0f;
         Vec3 candidateVelocity{0.0f, 0.0f, 0.0f};
         auto velOpt = proc->read<Vec3>(pawn + Offsets::m_vecAbsVelocity::STATIC_PTR);
         if (velOpt) {
@@ -711,37 +741,35 @@ void Aim::update(mem::ProcessMemory* proc) {
     // Apply candidate selection / stickiness
     if (found) {
         if (g_pendingPawn == chosenPawn) {
-            g_pendingFrames += 1;
+            // keep candidate alive until switch delay expires
         } else {
             g_pendingPawn = chosenPawn;
-            g_pendingFrames = 1;
+            candidateStartMs = nowMs;
         }
     } else {
         g_pendingPawn = 0;
-        g_pendingFrames = 0;
+        candidateStartMs = nowMs;
     }
 
-    int requiredFrames = std::max(0, visCfg.visCooldownFrames);
-    bool confirmedCandidate = (g_pendingPawn != 0 && g_pendingFrames >= requiredFrames);
+    bool confirmedCandidate = (g_pendingPawn != 0 && (nowMs >= candidateStartMs + static_cast<uint64_t>(switchDelayMs)));
 
     if (confirmedCandidate) {
         if (g_targetPawn != g_pendingPawn) {
-            Gui::log("[DBG] target confirmed after %d frames: 0x%llX", g_pendingFrames, (unsigned long long)g_pendingPawn);
+            Gui::log("[DBG] target confirmed: 0x%llX", (unsigned long long)g_pendingPawn);
         }
         g_targetPawn = g_pendingPawn;
-        g_lostFrames = 0;
+        lostStartMs = nowMs;
     } else {
         if (g_targetPawn != 0) {
             bool currentStillVisible = isPawnVisible(proc, g_targetPawn, localPlayerId, visCfg.strictVisibility);
             if (!currentStillVisible) {
-                g_lostFrames += 1;
-                Gui::log("[DBG] target lost-frame %d for 0x%llX", g_lostFrames, (unsigned long long)g_targetPawn);
-                if (g_lostFrames > requiredFrames) {
+                Gui::log("[DBG] target lost: 0x%llX", (unsigned long long)g_targetPawn);
+                if (nowMs >= lostStartMs + static_cast<uint64_t>(switchDelayMs)) {
                     Gui::log("[DBG] target dropped (visibility loss) 0x%llX", (unsigned long long)g_targetPawn);
                     g_targetPawn = 0;
                 }
             } else {
-                g_lostFrames = 0;
+                lostStartMs = nowMs;
             }
         }
     }
@@ -820,8 +848,29 @@ void Aim::update(mem::ProcessMemory* proc) {
         leadTarget = bestTargetHead;
     }
 
-    Vec3 desiredAng = calcAngle(eyeOrigin, leadTarget);
-    Vec3 deltaStep = smoothAim(curAng, desiredAng, 1.0f / aimSmoothFactor);
+    Vec3 aimTarget = visCfg.predictionEnabled ? leadTarget : bestTargetHead;
+    if (visCfg.resolverEnabled) {
+        float offset = (visCfg.resolverStrength / 100.0f) * 2.0f;
+        aimTarget.x += (static_cast<float>(rand() % 101) / 100.0f - 0.5f) * offset;
+        aimTarget.y += (static_cast<float>(rand() % 101) / 100.0f - 0.5f) * offset;
+    }
+    if (visCfg.randomization > 0.0f) {
+        float randScale = visCfg.randomization * 0.02f;
+        aimTarget.x += (static_cast<float>(rand() % 101) / 100.0f - 0.5f) * randScale;
+        aimTarget.y += (static_cast<float>(rand() % 101) / 100.0f - 0.5f) * randScale;
+        aimTarget.z += (static_cast<float>(rand() % 101) / 100.0f - 0.5f) * randScale;
+    }
+
+    Vec3 desiredAng = calcAngle(eyeOrigin, aimTarget);
+    float curveFactor = 1.0f - visCfg.smoothness;
+    if (curveFactor < 0.02f) curveFactor = 0.02f;
+    switch (visCfg.accelCurve) {
+        case 1: curveFactor = curveFactor * curveFactor; break;
+        case 2: curveFactor = 1.0f - (1.0f - curveFactor) * (1.0f - curveFactor); break;
+        case 3: curveFactor = 1.0f / (1.0f + expf(-((curveFactor * 12.0f - 6.0f) * visCfg.accelStrength)));
+    }
+    curveFactor *= 0.5f + 0.5f * visCfg.accelStrength;
+    Vec3 deltaStep = smoothAim(curAng, desiredAng, curveFactor);
 
     Gui::log("[DBG] aiming pawn=0x%llX fov=%.2f dist=%.1f curAng=(%.2f,%.2f) desiredAng=(%.2f,%.2f) delta=(%.2f,%.2f)",
              (unsigned long long)g_targetPawn,
@@ -832,10 +881,12 @@ void Aim::update(mem::ProcessMemory* proc) {
              deltaStep.x, deltaStep.y);
 
     if (fabsf(deltaStep.x) < 0.01f && fabsf(deltaStep.y) < 0.01f) {
-        Gui::log("[DBG] delta too small, skipping mouse input");
+        Gui::log("[DBG] delta too small, skipping aim input");
+    } else if (!visCfg.silentAim) {
+        moveMouseForAngleDelta(deltaStep, visCfg.aimSensitivity);
     } else {
-        // Do not write view angles directly in CS2; use mouse motion to make change apply naturally.
-        moveMouseForAngleDelta(deltaStep, 1.0f);
+        // Silent aim path: direct angle write may be less visible than raw mouse injection.
+        proc->write<Vec3>(localPawn + Offsets::m_angEyeAngles::STATIC_PTR, desiredAng);
     }
 
     // Keep head points for overlay if needed, but no extra input required.
@@ -928,15 +979,22 @@ void Aim::update(mem::ProcessMemory* proc) {
     static uint64_t lastShot = 0;
     uint64_t now = GetTickCount64();
 
-    // Aim-fire mode active for auto-aim or ALT hold
+    FovResult targetFov = GetTargetFOVAndDistance(eyeOrigin, angleToDirection(curAng), bestTargetHead);
+    float hitchance = std::clamp(100.0f - targetFov.fovDeg * 2.0f - distance3d(eyeOrigin, bestTargetHead) * 0.05f, 0.0f, 100.0f);
+    bool triggerInFov = (targetFov.fovDeg <= TRIGGER_FOV);
+    bool canShoot = visCfg.autoShoot || (triggerOnly && leftDown);
+
     bool shouldShoot = false;
     uint64_t usedDelay = normalDelayMs;
 
-    if (autoFire) {
-        // shoot at cadence when aim mode is active
-        if (now >= lastShot + normalDelayMs) {
-            shouldShoot = true;
-            usedDelay = normalDelayMs;
+    if (canShoot && hitchance >= static_cast<float>(visCfg.minHitChance)) {
+        if (triggerOnly) {
+            shouldShoot = triggerInFov;
+        } else {
+            if (now >= lastShot + normalDelayMs) {
+                shouldShoot = true;
+                usedDelay = normalDelayMs;
+            }
         }
     }
 

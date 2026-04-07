@@ -22,6 +22,7 @@ namespace Overlay {
         bool teamA;
         bool isBomb;
         float blowTime;
+        std::vector<std::pair<int, POINT>> bonePoints;
     };
 
     bool create(HINSTANCE hInst);

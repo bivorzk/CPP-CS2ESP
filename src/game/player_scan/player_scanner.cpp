@@ -4,12 +4,34 @@
 #include "gui_tabs.hpp"
 #include "overlay.hpp"
 #include "bomb_found.hpp"
+#include "aim/aim_math.hpp"
 
 #include <array>
 #include <algorithm>
 #include <cmath>
 
 namespace PlayerScanner {
+
+static bool readBoneWorldPos(mem::ProcessMemory* proc, uintptr_t pawn, int boneIndex, Aim::Vec3& out) {
+    if (!proc || !pawn || boneIndex < 0) return false;
+
+    constexpr uintptr_t BONE_STRIDE = 0x20;
+    auto gameSceneNodeOpt = proc->read<uintptr_t>(pawn + Offsets::m_pGameSceneNode::STATIC_PTR);
+    if (!gameSceneNodeOpt || *gameSceneNodeOpt == 0) return false;
+    uintptr_t gameSceneNode = *gameSceneNodeOpt;
+
+    uintptr_t boneArrayAddr = gameSceneNode + Offsets::m_modelState::STATIC_PTR + Offsets::boneArrayOffset::STATIC_PTR;
+    auto boneArrayPtrOpt = proc->read<uintptr_t>(boneArrayAddr);
+    if (!boneArrayPtrOpt || *boneArrayPtrOpt == 0) return false;
+    uintptr_t boneArray = *boneArrayPtrOpt;
+
+    uintptr_t entry = boneArray + static_cast<uintptr_t>(boneIndex) * BONE_STRIDE;
+    auto bonePosOpt = proc->read<Aim::Vec3>(entry);
+    if (!bonePosOpt) return false;
+
+    out = *bonePosOpt;
+    return true;
+}
 
 static uint64_t s_scanFrameCount = 0;
 static uint64_t s_scanLastFpsMs = 0;
@@ -166,20 +188,25 @@ bool scanPlayers(mem::ProcessMemory* proc, const Bomb::Info* bombInfo) {
             drawBox = true;
         }
 
+        auto pawnHealthOpt = proc->read<uint32_t>(pawn + Offsets::m_iPawnHealth::STATIC_PTR);
         auto healthOpt = proc->read<uint32_t>(pawn + Offsets::m_iHealth::STATIC_PTR);
-        if (!healthOpt) {
+        if (!pawnHealthOpt && !healthOpt) {
             DBG_LOG("[DBG] pawn %llX health read failed", (unsigned long long)pawn);
             continue;
         }
-        uint32_t health = *healthOpt;
+
+        uint32_t pawnHealth = pawnHealthOpt ? *pawnHealthOpt : 0;
+        uint32_t actualHealth = healthOpt ? *healthOpt : 0;
+        uint32_t health = 0;
+
+        if (pawnHealth >= 1 && pawnHealth <= 100) {
+            health = pawnHealth;
+        } else if (actualHealth >= 1 && actualHealth <= 100) {
+            health = actualHealth;
+        }
+
         if (health == 0 || health > 100) {
-            // ensure local player not falsely dead by defaulting to controller pawn health
-            auto pawnHealthOpt = proc->read<uint32_t>(currentController + Offsets::m_iPawnHealth::STATIC_PTR);
-            if (pawnHealthOpt && *pawnHealthOpt > 0 && *pawnHealthOpt <= 100) {
-                health = *pawnHealthOpt;
-            } else {
-                continue;
-            }
+            continue;
         }
 
         std::string name = readRemoteString(proc, currentController + Offsets::m_iszPlayerName::STATIC_PTR, 64);
@@ -228,6 +255,19 @@ bool scanPlayers(mem::ProcessMemory* proc, const Bomb::Info* bombInfo) {
                         info.drawBox = drawBox;
                         info.teamA = (uiTeam == 0);
                         info.isBomb = false;
+
+                        if (!isSelfPawn && (localTeam < 0 || gameTeam != localTeam)) {
+                            static const int boneIndices[] = { 6, 5, 4, 0, 22, 23, 24, 25, 26, 27, 8, 9, 11, 13, 14, 16 };
+                            for (int boneIndex : boneIndices) {
+                                Aim::Vec3 boneWorld;
+                                if (!readBoneWorldPos(proc, pawn, boneIndex, boneWorld)) continue;
+                                PlayerScanner::Vec3 bonePos{ boneWorld.x, boneWorld.y, boneWorld.z };
+                                POINT bonePt;
+                                if (!worldToScreen(bonePos, viewMatrix, gameW, gameH, bonePt)) continue;
+                                info.bonePoints.emplace_back(boneIndex, bonePt);
+                            }
+                        }
+
                         pawnRects.push_back(info);
                     } else {
                         DBG_LOG("[DBG] w2s failed for pawn (footOk=%d headOk=%d)", footOk, headOk);

@@ -3,6 +3,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <array>
 
 // ============================================================
 //  gui.hpp — Win32 tabbed control panel
@@ -36,14 +37,64 @@ namespace Gui {
         COLORREF color;
         int      posX, posY;
         bool     showTeamABoxes; // draw friendly team boxes in overlay (Team A)
-        bool     autoAim;        // enable auto aim+shoot without key hold
-        bool     altAutoFire;   // when true, ALT also shoots; when false, ALT only tracks/aims
+
+        // Legacy compatibility for older UI states. New aimbot mode is controlled by aimbotEnabled/aimbotMode.
+        bool     autoAim;
+        bool     altAutoFire;
+
+        int      espMode;       // 0=Advanced Chams, 1=Bone ESP, 2=Perfect Flat Chams
+        int      espStrength;   // shared line thickness / glow intensity setting
+        float    aimSensitivity; // additional aim input scale for mouse movement
+        float    aimSmoothing;  // existing smoothing value (legacy)
+        int      aimMaxFov;     // maximum dynamic FOV degrees used for target selection
         int      aimPart;        // 0=head, 1=body, 2=arms, 3=legs
 
         bool     strictVisibility;  // enforce strict locally-visible criteria
         int      visCooldownFrames; // number of frames to confirm new target / keep old after lost
 
         bool     autoBhop;          // enable bunnyhop automation
+
+        // New aimbot configuration
+        bool     aimbotEnabled;
+        int      aimbotMode;        // 0=Off, 1=Legit, 2=Rage, 3=Triggerbot-only
+        int      targetPriority;    // 0=Crosshair,1=Distance,2=LowHP,3=VisibleOnly,4=FOV
+        bool     visibleOnly;
+        int      maxDistance;       // meters
+        bool     ignoreTeammates;
+        bool     ignoreFlashed;
+        bool     ignoreSmoke;
+        bool     ignoreScopedOnly;
+        int      targetSwitchMs;
+
+        float    smoothness;        // 0.0 = instant snap, 1.0 = legit slow
+        int      accelCurve;        // 0=Linear,1=Ease-in,2=Ease-out,3=Sigmoid
+        float    accelStrength;     // curve strength
+        float    randomization;     // random offset strength
+        bool     recoilCompensation;
+        float    recoilStrength;
+        bool     silentAim;
+        bool     autoShoot;
+        int      minHitChance;      // 0–100
+        bool     autoScope;
+        bool     autoStop;
+
+        int      aimbotUpdateMs;    // 0=every tick, >0 custom ms
+        bool     predictionEnabled;
+        bool     resolverEnabled;
+        int      resolverStrength;  // 0–100
+        bool     visibilityRayTrace;
+        int      minReactionMs;
+
+        bool     drawFovCircle;
+        COLORREF fovCircleColor;
+        int      fovCircleThickness;
+        bool     drawTargetLine;
+        bool     drawTargetDot;
+        bool     drawAimPoint;
+        bool     showTargetInfo;
+
+        std::array<int, 7> bonePriorityOrder; // category indices in preferred order
+        std::array<bool, 7> bonePriorityEnabled;
     };
 
     // -- Lifecycle -------------------------------------------
@@ -60,5 +111,7 @@ namespace Gui {
     // -- Config reads ----------------------------------------
     Config       getConfig();
     VisualConfig getVisuals();
+    void         setVisuals(const VisualConfig& cfg);
+    void         setAimbotEnabled(bool enabled);
 
 } // namespace Gui

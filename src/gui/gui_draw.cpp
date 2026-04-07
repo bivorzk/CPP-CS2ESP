@@ -1,5 +1,6 @@
 #include "gui_draw.hpp"
 #include <cstdio>
+#include <algorithm>
 
 namespace Gui {
 
@@ -13,11 +14,66 @@ HWND      s_tabBtns[TAB_COUNT] = {};
 int       s_activeTab = 0;
 
 Config      s_config  = { "cs2.exe", 8 };   // reduced poll interval for near-realtime updates
-VisualConfig s_visuals = { 300, 200, 3, 255, RGB(255,255,255), 0, 0,
-                           false, false, false, 0, false, 0, false };
+VisualConfig s_visuals = {
+    .width = 300,
+    .height = 200,
+    .borderPx = 3,
+    .opacity = 255,
+    .color = RGB(255,255,255),
+    .posX = 0,
+    .posY = 0,
+    .showTeamABoxes = false,
+    .autoAim = false,
+    .altAutoFire = false,
+    .espMode = 0,
+    .espStrength = 2,
+    .aimSensitivity = 1.0f,
+    .aimSmoothing = 0.20f,
+    .aimMaxFov = 180,
+    .aimPart = 0,
+    .strictVisibility = false,
+    .visCooldownFrames = 0,
+    .autoBhop = false,
+    .aimbotEnabled = true,
+    .aimbotMode = 1,
+    .targetPriority = 0,
+    .visibleOnly = false,
+    .maxDistance = 1700,
+    .ignoreTeammates = true,
+    .ignoreFlashed = false,
+    .ignoreSmoke = false,
+    .ignoreScopedOnly = false,
+    .targetSwitchMs = 80,
+    .smoothness = 0.35f,
+    .accelCurve = 0,
+    .accelStrength = 0.18f,
+    .randomization = 0.0f,
+    .recoilCompensation = false,
+    .recoilStrength = 1.0f,
+    .silentAim = false,
+    .autoShoot = true,
+    .minHitChance = 50,
+    .autoScope = false,
+    .autoStop = false,
+    .aimbotUpdateMs = 45,
+    .predictionEnabled = true,
+    .resolverEnabled = false,
+    .resolverStrength = 0,
+    .visibilityRayTrace = false,
+    .minReactionMs = 75,
+    .drawFovCircle = true,
+    .fovCircleColor = RGB(100,255,100),
+    .fovCircleThickness = 2,
+    .drawTargetLine = true,
+    .drawTargetDot = true,
+    .drawAimPoint = true,
+    .showTargetInfo = true,
+    .bonePriorityOrder = { 0, 1, 2, 3, 4, 5, 6 },
+    .bonePriorityEnabled = { true, true, true, true, true, true, true }
+};
 
 const char* TAB_NAMES[TAB_COUNT] = {
-    "Config", "Combat", "Movement", "Memory", "Hotkeys", "Debug", "About", "Players"
+    "Config", "Aimbot", "ESP", "Movement", "Memory", "Hotkeys", "Debug", "About", "Players"
 };
 
 HBRUSH s_brDark  = nullptr;
@@ -120,6 +176,24 @@ HWND mkValLbl(HWND p, int val, int x, int y, int id) {
         x,y,32,18, p, (HMENU)(intptr_t)id, s_hInst, nullptr);
     setFont(hw, s_fMono);
     return hw;
+}
+
+void setPanelScrollRange(HWND panel, int contentHeight) {
+    RECT rc;
+    GetClientRect(panel, &rc);
+    int page = std::max(1, static_cast<int>(rc.bottom - rc.top));
+    int maxPos = std::max(0, contentHeight - page);
+
+    SCROLLINFO si{};
+    si.cbSize = sizeof(si);
+    si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin   = 0;
+    si.nMax   = maxPos;
+    si.nPage  = page;
+    si.nPos   = 0;
+
+    SetScrollInfo(panel, SB_VERT, &si, TRUE);
+    ShowScrollBar(panel, SB_VERT, maxPos > 0);
 }
 
 // ============================================================
@@ -251,8 +325,50 @@ LRESULT CALLBACK PanelProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
                 case ID_VIS_R:       syncSlider(hw,ID_VIS_R,      ID_VIS_R_LBL);       break;
                 case ID_VIS_G:       syncSlider(hw,ID_VIS_G,      ID_VIS_G_LBL);       break;
                 case ID_VIS_B:       syncSlider(hw,ID_VIS_B,      ID_VIS_B_LBL);       break;
+                case ID_AIM_SMOOTHNESS: syncSlider(hw,ID_AIM_SMOOTHNESS,ID_AIM_SMOOTHNESS+1000); break;
+                case ID_AIM_RANDOMIZATION: syncSlider(hw,ID_AIM_RANDOMIZATION,ID_AIM_RANDOMIZATION+1000); break;
+                case ID_AIM_MIN_HITCHANCE: syncSlider(hw,ID_AIM_MIN_HITCHANCE,ID_AIM_MIN_HITCHANCE+1000); break;
+                case ID_AIM_FOV_THICKNESS: syncSlider(hw,ID_AIM_FOV_THICKNESS,ID_AIM_FOV_THICKNESS+1000); break;
+                case ID_VIS_ESP_STRENGTH: syncSlider(hw, ID_VIS_ESP_STRENGTH, ID_VIS_ESP_STRENGTH_LBL); break;
             }
             break;
+        }
+        case WM_VSCROLL: {
+            SCROLLINFO si{};
+            si.cbSize = sizeof(si);
+            si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+            if (!GetScrollInfo(hw, SB_VERT, &si) || si.nMax <= si.nMin) return 0;
+
+            int pos = si.nPos;
+            RECT rc; GetClientRect(hw, &rc);
+            int page = std::max(1, static_cast<int>(rc.bottom - rc.top));
+            int newPos = pos;
+            switch (LOWORD(wp)) {
+                case SB_LINEUP:    newPos = pos - 16; break;
+                case SB_LINEDOWN:  newPos = pos + 16; break;
+                case SB_PAGEUP:    newPos = pos - page; break;
+                case SB_PAGEDOWN:  newPos = pos + page; break;
+                case SB_THUMBTRACK: newPos = HIWORD(wp); break;
+            }
+            newPos = std::clamp(newPos, si.nMin, si.nMax);
+            if (newPos != pos) {
+                int dy = pos - newPos;
+                ScrollWindowEx(hw, 0, dy, nullptr, nullptr, nullptr, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE);
+                si.fMask = SIF_POS;
+                si.nPos  = newPos;
+                SetScrollInfo(hw, SB_VERT, &si, TRUE);
+            }
+            return 0;
+        }
+        case WM_MOUSEWHEEL: {
+            SCROLLINFO si{};
+            si.cbSize = sizeof(si);
+            si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+            if (!GetScrollInfo(hw, SB_VERT, &si) || si.nMax <= si.nMin) return 0;
+            int delta = GET_WHEEL_DELTA_WPARAM(wp);
+            if (delta > 0) SendMessage(hw, WM_VSCROLL, MAKEWPARAM(SB_LINEUP, 0), 0);
+            else if (delta < 0) SendMessage(hw, WM_VSCROLL, MAKEWPARAM(SB_LINEDOWN, 0), 0);
+            return 0;
         }
         case WM_COMMAND:
             SendMessage(GetParent(hw), WM_COMMAND, wp, lp);

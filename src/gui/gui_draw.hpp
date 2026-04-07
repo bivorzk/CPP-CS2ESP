@@ -55,6 +55,7 @@ void paintTabBtn (LPDRAWITEMSTRUCT di, int idx);
 //  Helpers used by tab files
 // ============================================================
 void syncSlider(HWND panel, int sliderId, int labelId);
+void setPanelScrollRange(HWND panel, int contentHeight);
 
 // ============================================================
 //  Panel WndProc (shared across all tab panels)

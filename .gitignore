@@ -7,3 +7,4 @@ chrome_overlay.exe
 first.PTR.*
 first.PTR
 build/
+*.o

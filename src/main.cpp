@@ -132,6 +132,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
 
     // END key quits cleanly from anywhere
     RegisterHotKey(nullptr, 1, MOD_NOREPEAT, VK_END);
+    RegisterHotKey(nullptr, 2, MOD_NOREPEAT, VK_F1); // toggle aimbot on/off
 
     // First tick immediately — no cold-start delay
     runTick();
@@ -143,7 +144,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
         while (g_polling) {
             runTick();
             DWORD pollMs = Gui::getConfig().pollMs;
-            if (pollMs < 10) pollMs = 10;
+            if (pollMs < 1) pollMs = 1;
             Sleep(pollMs);
         }
     });
@@ -151,9 +152,17 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     // Single message loop handles all windows + timer in this thread
     MSG msg{};
     while (GetMessage(&msg, nullptr, 0, 0)) {
-        if (msg.message == WM_HOTKEY && msg.wParam == 1) {
-            Gui::log("[*] END pressed — shutting down.");
-            break;
+        if (msg.message == WM_HOTKEY) {
+            if (msg.wParam == 1) {
+                Gui::log("[*] END pressed — shutting down.");
+                break;
+            }
+            if (msg.wParam == 2) {
+                Gui::VisualConfig vis = Gui::getVisuals();
+                vis.aimbotEnabled = !vis.aimbotEnabled;
+                Gui::setVisuals(vis);
+                Gui::log("[*] Aimbot %s", vis.aimbotEnabled ? "enabled" : "disabled");
+            }
         }
         TranslateMessage(&msg);
         DispatchMessage(&msg);

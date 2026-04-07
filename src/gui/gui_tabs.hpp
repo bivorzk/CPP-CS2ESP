@@ -8,6 +8,7 @@ namespace Gui {
 
     void buildConfig  (HWND p);  bool handleConfig  (WPARAM wp);
     void buildCombat  (HWND p);  bool handleCombat  (WPARAM wp);
+    void buildESP     (HWND p);  bool handleESP     (WPARAM wp);
     void buildMovement(HWND p);  bool handleMovement(WPARAM wp);
     void buildMemory  (HWND p);  bool handleMemory  (WPARAM wp);
     void buildHotkeys (HWND p);  bool handleHotkeys (WPARAM wp);

@@ -85,11 +85,20 @@ static LRESULT CALLBACK GuiProc(HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
             // Each handler returns true if it consumed the message
             if (handleConfig (wp)) { log("[Config] Applied — process: %s  poll: %lums", s_config.targetProcess, s_config.pollMs); break; }
             if (handleCombat(wp)) { log("[Combat] Settings updated"); break; }
+            if (handleESP   (wp)) { log("[ESP] Settings updated"); break; }
             if (handleMovement(wp)) { log("[Movement] Settings updated"); break; }
             if (handleMemory (wp)) { log("[Memory] Write not yet wired — fill game logic in main.cpp."); break; }
             if (handlePlayers(wp)) { log("[Players] Player list controls handled."); break; }
             handleHotkeys(wp);
             handleDebug  (wp);
+            break;
+        }
+
+        case WM_MOUSEWHEEL: {
+            if (s_activeTab >= 0 && s_activeTab < TAB_COUNT && s_panels[s_activeTab]) {
+                SendMessage(s_panels[s_activeTab], WM_MOUSEWHEEL, wp, lp);
+                return 0;
+            }
             break;
         }
 
@@ -158,7 +167,6 @@ bool init(HINSTANCE hInst) {
     int ch = WIN_H - 42;
     for (int i = 0; i < TAB_COUNT; ++i) {
         int style = WS_CHILD | (i==0 ? WS_VISIBLE : 0) | WS_CLIPCHILDREN;
-        if (i == 1) style |= WS_VSCROLL;
         s_panels[i] = CreateWindowA(PCLS, "",
             style,
             cx, 2, cw, ch,
@@ -168,12 +176,13 @@ bool init(HINSTANCE hInst) {
     // Build each tab's controls
     buildConfig   (s_panels[0]);
     buildCombat   (s_panels[1]);
-    buildMovement (s_panels[2]);
-    buildMemory   (s_panels[3]);
-    buildHotkeys  (s_panels[4]);
-    buildDebug    (s_panels[5]);
-    buildAbout    (s_panels[6]);
-    buildPlayers  (s_panels[7]);
+    buildESP      (s_panels[2]);
+    buildMovement (s_panels[3]);
+    buildMemory   (s_panels[4]);
+    buildHotkeys  (s_panels[5]);
+    buildDebug    (s_panels[6]);
+    buildAbout    (s_panels[7]);
+    buildPlayers  (s_panels[8]);
 
     return true;
 }
@@ -210,5 +219,7 @@ void setStatus(const char* text) {
 
 Config       getConfig()  { return s_config;  }
 VisualConfig getVisuals() { return s_visuals; }
+void         setVisuals(const VisualConfig& cfg) { s_visuals = cfg; }
+void         setAimbotEnabled(bool enabled) { s_visuals.aimbotEnabled = enabled; }
 
 } // namespace Gui

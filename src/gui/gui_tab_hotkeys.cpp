@@ -11,6 +11,7 @@ void buildHotkeys(HWND p) {
     struct { const char* lbl; const char* key; int id; } ks[] = {
         { "Quit overlay",   "END",    ID_HK_QUIT   },
         { "Toggle overlay", "INSERT", ID_HK_TOGGLE },
+        { "Toggle aimbot",  "F1",     0           },
     };
     for (auto& k : ks) {
         mkLabel(p, k.lbl,  x,       y, 110, 18);
